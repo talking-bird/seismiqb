@@ -22,7 +22,8 @@ class GeometryHDF5(Geometry):
     """
     FILE_OPENER = h5py.File
 
-    def init(self, path, mode='r', **kwargs):
+    # open with read-write mode (file must exist) to avoid async open same file while `dump_meta`
+    def init(self, path, mode='r+', **kwargs):
         """ Init for HDF5 geometry. The sequence of actions:
             - open file handler
             - check available projections in the file
