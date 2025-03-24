@@ -54,7 +54,7 @@ class GeometrySEGY(Geometry):
 
     def init(self, path, index_headers=INDEX_HEADERS_POSTSTACK, additional_headers=ADDITIONAL_HEADERS_POSTSTACK_FULL,
              loader_class=MemmapLoader, reload_headers=False, dump_headers=True, load_headers_params=None,
-             collect_stats=True, recollect_stats=False, collect_stats_params=None, dump_meta=True,
+             collect_stats=True, recollect_stats=False, collect_stats_params=None, dump_meta=True, endian='big',
              **kwargs):
         """ Init for SEG-Y geometry. The sequence of actions:
             - initialize loader instance
@@ -71,7 +71,7 @@ class GeometrySEGY(Geometry):
         self.converted = False
 
         # Initialize loader
-        self.loader = self._infer_loader_class(loader_class)(path)
+        self.loader = self._infer_loader_class(loader_class)(path, endian=endian)
 
         # Retrieve some of the attributes directly from the `loader`
         self.n_traces = self.loader.n_traces
