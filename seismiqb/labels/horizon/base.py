@@ -386,6 +386,9 @@ class Horizon(
             Storage to reset.
         """
         _ = kwargs
+        assert (
+            points.shape[1] == 3
+        ), f"Expected points of shape (N, 3), got {points.shape} instead."
 
         if verify:
             mask = make_interior_points_mask(points, self.field.shape)
@@ -410,6 +413,8 @@ class Horizon(
             fill_value=Horizon.FILL_VALUE,
             transform=transform,
             verify=True,
+            cdp_factor=kwargs.pop("cdp_factor", 1),
+            recover_lines=kwargs.pop("recover_lines", False),
         )
 
         self.from_points(points, verify=False, **kwargs)

@@ -43,6 +43,7 @@ class CharismaMixin:
         transform=True,
         verify=True,
         recover_lines=False,
+        cdp_factor=1,
         **kwargs,
     ):
         """Load data from path to either CHARISMA or REDUCED_CHARISMA csv-like file.
@@ -80,6 +81,7 @@ class CharismaMixin:
         df = pd.read_csv(
             path, sep=r"\s+", names=names, usecols=self.REDUCED_CHARISMA_SPEC
         )
+        df = self.scale_cdp(df, cdp_factor)
         if recover_lines:
             df = self.recover_lines_from_cdp(df)
         df.sort_values(self.REDUCED_CHARISMA_SPEC, inplace=True)
@@ -203,23 +205,55 @@ class CharismaMixin:
         """Fix broken iline and crossline coordinates.
         If coordinates are out of the cube, 'iline' and 'xline' will be infered from 'cdp_x' and 'cdp_y'.
         """
-        i_bounds = [self.field.shifts[0], self.field.shifts[0] + self.field.shape[0]]
-        x_bounds = [self.field.shifts[1], self.field.shifts[1] + self.field.shape[1]]
-
-        i_mask = np.logical_or(
-            df["INLINE_3D"] < i_bounds[0], df["INLINE_3D"] >= i_bounds[1]
-        )
-        x_mask = np.logical_or(
-            df["CROSSLINE_3D"] < x_bounds[0], df["CROSSLINE_3D"] >= x_bounds[1]
-        )
-        i_mask = np.logical_or(df['INLINE_3D'] < i_bounds[0], df['INLINE_3D'] >= i_bounds[1])
-        x_mask = np.logical_or(df['CROSSLINE_3D'] < x_bounds[0], df['CROSSLINE_3D'] >= x_bounds[1])
-
-        _df = df[np.logical_or(i_mask, x_mask)]
+        # convert cdp to iline and xline
+        df[["CDP_X", "CDP_Y"]] = df[["INLINE_3D", "CROSSLINE_3D"]]
 
         coords = np.rint(
-            self.field.geometry.cdp_to_lines(_df[["CDP_X", "CDP_Y"]].values)
+            self.field.geometry.cdp_to_lines(df[["CDP_X", "CDP_Y"]].values)
         ).astype(np.int32)
-        df.loc[np.logical_or(i_mask, x_mask), ["INLINE_3D", "CROSSLINE_3D"]] = coords
+        df[["INLINE_3D", "CROSSLINE_3D"]] = coords
 
+        # validate iline and xline
+        i_bounds = [self.field.shifts[0], self.field.shifts[0] + self.field.shape[0]]
+        x_bounds = [self.field.shifts[1], self.field.shifts[1] + self.field.shape[1]]
+        i_mask = np.logical_and(
+            df["INLINE_3D"] > i_bounds[0], df["INLINE_3D"] <= i_bounds[1]
+        )
+        x_mask = np.logical_and(
+            df["CROSSLINE_3D"] > x_bounds[0], df["CROSSLINE_3D"] <= x_bounds[1]
+        )
+        if np.sum(i_mask) == 0 and np.sum(x_mask) == 0:
+            print("Bounds from the geometry file:")
+            print(f"iline bounds: {i_bounds}")
+            print(f"xline bounds: {x_bounds}")
+            print("Values from the geometry file:")
+            print(
+                self.field.geometry.headers.describe().loc[
+                    ["min", "max"], ["CDP_X", "CDP_Y", "INLINE_3D", "CROSSLINE_3D"]
+                ]
+            )
+            print("Values from the horizon file:")
+            print(
+                df.describe().loc[
+                    ["min", "max"], ["CDP_X", "CDP_Y", "INLINE_3D", "CROSSLINE_3D"]
+                ]
+            )
+
+            assumed_coeffs = (
+                self.field.geometry.headers[["CDP_X", "CDP_Y"]].max()
+                - self.field.geometry.headers[["CDP_X", "CDP_Y"]].min()
+            ) / (df[["CDP_X", "CDP_Y"]].max() - df[["CDP_X", "CDP_Y"]].min())
+            print(
+                f"Approximate cdp_factor for CDP_X and CDP_Y (in case horizon covers the whole geometry cube):\n{assumed_coeffs} "
+            )
+            raise ValueError("No in bound points found! Try scaling CDP coordinates.")
+        return df.loc[
+            np.logical_and(i_mask, x_mask), ["INLINE_3D", "CROSSLINE_3D", "DEPTH"]
+        ]
+
+    def scale_cdp(self, df: pd.DataFrame, cdp_factor=1) -> pd.DataFrame:
+        """Scale CDP coordinates in case the CHARISMA file containes CDP coordinates with different scale."""
+        df[["INLINE_3D", "CROSSLINE_3D"]] = (
+            df[["INLINE_3D", "CROSSLINE_3D"]] * cdp_factor
+        )
         return df
