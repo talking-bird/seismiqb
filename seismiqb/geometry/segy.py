@@ -90,11 +90,16 @@ class GeometrySEGY(Geometry):
             self.segy_text = ['*'*3200]
 
         # If all stats are already available in meta, use them
-        required_attributes = self.PRESERVED + self.PRESERVED_LAZY + self.PRESERVED_LAZY_CACHED
+        required_attributes = (
+            self.PRESERVED
+            + self.PRESERVED_LAZY
+            + self.PRESERVED_LAZY_CACHED
+            + self.PRESERVED_LAZY_MISC
+        )
         meta_exists_and_has_attributes = self.meta_storage.exists and self.meta_storage.has_items(required_attributes)
 
         if meta_exists_and_has_attributes and not (reload_headers or recollect_stats):
-            self.load_meta(keys=self.PRESERVED)
+            self.load_meta(keys=required_attributes)
             self.has_stats = True
             return
 
