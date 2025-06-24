@@ -1,5 +1,6 @@
-""" Container for storing seismic data and labels. """
-#pylint: disable=too-many-lines, too-many-arguments
+"""Container for storing seismic data and labels."""
+
+# pylint: disable=too-many-lines, too-many-arguments
 from textwrap import indent
 
 import numpy as np
@@ -13,8 +14,9 @@ from .batch import SeismicCropBatch
 from .utils import AugmentedDict
 from .plotters import plot
 
+
 class SeismicDataset(Dataset):
-    """ Container of fields.
+    """Container of fields.
 
     Getitem is re-defined to index stored fields.
     Getattr is re-defined to return the same attributes from all stored fields, wrapped into `AugmentedDict`.
@@ -31,16 +33,19 @@ class SeismicDataset(Dataset):
         - one field-like entity (same as sequence with only one element)
     Named arguments are passed for each field initialization.
     """
-    #pylint: disable=keyword-arg-before-vararg
+
+    # pylint: disable=keyword-arg-before-vararg
     def __init__(self, index, batch_class=SeismicCropBatch, *args, **kwargs):
         if args:
-            raise TypeError('Positional args are not allowed for `SeismicDataset` initialization!')
+            raise TypeError(
+                "Positional args are not allowed for `SeismicDataset` initialization!"
+            )
 
         # Convert `index` to a dictionary
         if isinstance(index, (str, Geometry, Field, SyntheticField)):
             index = [index]
         if isinstance(index, (tuple, list, DatasetIndex)):
-            index = {item : None for item in index}
+            index = {item: None for item in index}
 
         if isinstance(index, dict):
             self.fields = AugmentedDict()
@@ -54,8 +59,10 @@ class SeismicDataset(Dataset):
 
                 self.fields[field.short_name] = field
         else:
-            raise TypeError('Dataset should be initialized with a string, a ready-to-use Geometry or Field,'
-                            f' sequence or a dict, got {type(index)} instead.')
+            raise TypeError(
+                "Dataset should be initialized with a string, a ready-to-use Geometry or Field,"
+                f" sequence or a dict, got {type(index)} instead."
+            )
 
         dataset_index = DatasetIndex(list(self.fields.keys()))
         super().__init__(dataset_index, batch_class=batch_class)
@@ -63,36 +70,36 @@ class SeismicDataset(Dataset):
 
     @classmethod
     def from_horizon(cls, horizon):
-        """ Create dataset from an instance of Horizon. """
-        return cls({horizon.field.geometry : {'horizons': [horizon]}})
-
+        """Create dataset from an instance of Horizon."""
+        return cls({horizon.field.geometry: {"horizons": [horizon]}})
 
     # Inner workings
     def __getitem__(self, key):
-        """ Index a field with either its name or ordinal. """
+        """Index a field with either its name or ordinal."""
         if isinstance(key, (int, np.integer, str)):
             return self.fields[key]
-        raise KeyError(f'Unsupported key for subscripting, {key}')
-
+        raise KeyError(f"Unsupported key for subscripting, {key}")
 
     def get_nested_iterable(self, attribute):
-        """ Create an `AugmentedDict` with field ids as keys and their `attribute` as values.
+        """Create an `AugmentedDict` with field ids as keys and their `attribute` as values.
         For example, `dataset.get_nested_iterable('labels')` would
         return an `AugmentedDict` with labels for every field.
         """
-        return AugmentedDict({idx : getattr(field, attribute) for idx, field in self.fields.items()})
+        return AugmentedDict(
+            {idx: getattr(field, attribute) for idx, field in self.fields.items()}
+        )
 
     def __getattr__(self, key):
-        """ Create nested iterables for a key.
+        """Create nested iterables for a key.
         For example, `dataset.labels` would return an `AugmentedDict` with labels for every field.
         """
         if isinstance(key, str) and key not in self.indices:
             return self.get_nested_iterable(key)
-        raise AttributeError(f'Unknown attribute {key}')
+        raise AttributeError(f"Unknown attribute {key}")
 
     @property
     def names(self):
-        """ 2D index of available fields and labels. """
+        """2D index of available fields and labels."""
         if self._names is None:
             names = {}
             for i, (field_name, field_labels) in enumerate(self.labels.items()):
@@ -102,48 +109,69 @@ class SeismicDataset(Dataset):
         return self._names
 
     def to_names(self, id_array):
-        """ Convert the first two columns of sampled locations into field and label string names. """
+        """Convert the first two columns of sampled locations into field and label string names."""
         return np.array([self.names[tuple(ids)] for ids in id_array])
 
-
-    def gen_batch(self, batch_size=None, shuffle=False, n_iters=None, n_epochs=None, drop_last=False, **kwargs):
-        """ Remove `n_epochs`  and `drop_last` from passed arguments.
+    def gen_batch(
+        self,
+        batch_size=None,
+        shuffle=False,
+        n_iters=None,
+        n_epochs=None,
+        drop_last=False,
+        **kwargs,
+    ):
+        """Remove `n_epochs`  and `drop_last` from passed arguments.
         Set default value `batch_size` to the size of current dataset, removing the need to
         pass it to `next_batch` and `run` methods.
         """
         if (n_epochs is not None and n_epochs != 1) or drop_last:
-            raise TypeError(f'`SeismicCubeset` does not work with `n_epochs`, `shuffle` or `drop_last`!'
-                            f'`{n_epochs}`, `{shuffle}`, `{drop_last}`')
+            raise TypeError(
+                f"`SeismicCubeset` does not work with `n_epochs`, `shuffle` or `drop_last`!"
+                f"`{n_epochs}`, `{shuffle}`, `{drop_last}`"
+            )
 
         batch_size = batch_size or len(self)
         return super().gen_batch(batch_size, n_iters=n_iters, shuffle=shuffle, **kwargs)
 
-
     # Default pipeline and batch for fast testing / introspection
     def data_pipeline(self, sampler, batch_size=4, width=4):
-        """ Pipeline with default actions of creating locations, loading seismic images and corresponding masks. """
-        return (self.p
-                .make_locations(generator=sampler, batch_size=batch_size)
-                .create_masks(dst='masks', width=width)
-                .load_cubes(dst='images')
-                .adaptive_reshape(src=['images', 'masks'])
-                .normalize(src='images'))
+        """Pipeline with default actions of creating locations, loading seismic images and corresponding masks."""
+        return (
+            self.p.make_locations(generator=sampler, batch_size=batch_size)
+            .create_masks(dst="masks", width=width)
+            .load_cubes(dst="images")
+            .adaptive_reshape(src=["images", "masks"])
+            .normalize(src="images")
+        )
 
     def data_batch(self, sampler, batch_size=4, width=4):
-        """ Get one batch of `:meth:.data_pipeline` with `images` and `masks`. """
-        return self.data_pipeline(sampler=sampler, batch_size=batch_size, width=width).next_batch()
-
+        """Get one batch of `:meth:.data_pipeline` with `images` and `masks`."""
+        return self.data_pipeline(
+            sampler=sampler, batch_size=batch_size, width=width
+        ).next_batch()
 
     # Textual and visual representation of dataset contents
     def __str__(self):
-        msg = f'Seismic Dataset with {len(self)} field{"s" if len(self) > 1 else ""}:\n'
-        msg += '\n\n'.join([indent(str(field), prefix='    ') for field in self.fields.values()])
+        msg = f"Seismic Dataset with {len(self)} field{'s' if len(self) > 1 else ''}:\n"
+        msg += "\n\n".join(
+            [indent(str(field), prefix="    ") for field in self.fields.values()]
+        )
         return msg
 
-
-    def show_slide(self, loc, idx=0, axis='iline', zoom=None, src_labels='labels',
-                   indices='all', width=5, plotter=plot, **kwargs):
-        """ Show slide of the given cube on the given line.
+    def show_slide(
+        self,
+        loc,
+        idx=0,
+        axis="iline",
+        zoom=None,
+        src_labels="labels",
+        indices="all",
+        width=5,
+        plotter=plot,
+        **kwargs,
+    ):
+        """Show slide of the given cube on the given line.
 
         Parameters
         ----------
@@ -169,7 +197,9 @@ class SeismicDataset(Dataset):
             Plotter instance to use.
             Combined with `positions` parameter allows using subplots of already existing plotter.
         """
-        components = ('images', 'masks') if getattr(self, src_labels)[idx] else ('images',)
+        components = (
+            ("images", "masks") if getattr(self, src_labels)[idx] else ("images",)
+        )
         cube_name = self.indices[idx]
         geometry = self.fields[cube_name].geometry
         crop_shape = np.array(geometry.shape)
@@ -185,16 +215,19 @@ class SeismicDataset(Dataset):
 
         # Fake generator with one point only
         generator = lambda batch_size: location
-        generator.to_names = lambda array: np.array([[cube_name, 'unknown']])
+        generator.to_names = lambda array: np.array([[cube_name, "unknown"]])
 
-        pipeline = (Pipeline()
-                    .make_locations(generator=generator)
-                    .load_cubes(dst='images', src_labels=src_labels)
-                    .normalize(src='images'))
+        pipeline = (
+            Pipeline()
+            .make_locations(generator=generator)
+            .load_cubes(dst="images", src_labels=src_labels)
+            .normalize(src="images")
+        )
 
-        if 'masks' in components:
-            labels_pipeline = (Pipeline()
-                               .create_masks(src_labels=src_labels, dst='masks', width=width, indices=indices))
+        if "masks" in components:
+            labels_pipeline = Pipeline().create_masks(
+                src_labels=src_labels, dst="masks", width=width, indices=indices
+            )
 
             pipeline = pipeline + labels_pipeline
 
@@ -203,7 +236,7 @@ class SeismicDataset(Dataset):
         data = [np.squeeze(getattr(batch, comp)) for comp in components]
         xmin, xmax, ymin, ymax = 0, data[0].shape[0], data[0].shape[1], 0
 
-        if zoom == 'auto':
+        if zoom == "auto":
             zoom = geometry.compute_auto_zoom(loc, axis)
         if zoom:
             data = [image[zoom] for image in data]
@@ -218,27 +251,29 @@ class SeismicDataset(Dataset):
 
         if axis in [0, 1]:
             xlabel = geometry.index_headers[1 - axis]
-            ylabel = 'DEPTH'
+            ylabel = "DEPTH"
         if axis == 2:
             xlabel = geometry.index_headers[0]
             ylabel = geometry.index_headers[1]
 
         kwargs = {
-            'cmap': ['Greys_r', 'darkorange'],
-            'title': f'Data slice on cube `{geometry.short_name}`\n {header} {loc} out of {total}',
-            'xlabel': xlabel,
-            'ylabel': ylabel,
-            'extent': (xmin, xmax, ymin, ymax),
-            'legend': src_labels,
-            'augment_mask': [False, True],
-            **kwargs
+            "cmap": ["Greys_r", "darkorange"],
+            "title": f"Data slice on cube `{geometry.short_name}`\n {header} {loc} out of {total}",
+            "xlabel": xlabel,
+            "ylabel": ylabel,
+            "extent": (xmin, xmax, ymin, ymax),
+            "legend": src_labels,
+            "augment_mask": [False, True],
+            **kwargs,
         }
 
         return plotter(data, **kwargs)
 
     # Facies
-    def evaluate_facies(self, src_horizons, src_true=None, src_pred=None, metrics='dice'):
-        """ Calculate facies metrics for requested labels of the dataset and return dataframe of results.
+    def evaluate_facies(
+        self, src_horizons, src_true=None, src_pred=None, metrics="dice"
+    ):
+        """Calculate facies metrics for requested labels of the dataset and return dataframe of results.
 
         Parameters
         ----------
@@ -251,8 +286,12 @@ class SeismicDataset(Dataset):
         metrics: str or list of str
             Metrics function(s) to calculate.
         """
-        metrics_values = self.fields.evaluate_facies(src_horizons=src_horizons, src_true=src_true,
-                                                     src_pred=src_pred, metrics=metrics)
+        metrics_values = self.fields.evaluate_facies(
+            src_horizons=src_horizons,
+            src_true=src_true,
+            src_pred=src_pred,
+            metrics=metrics,
+        )
         result = pd.concat(metrics_values.flat)
 
         return result

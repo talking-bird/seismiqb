@@ -1,4 +1,5 @@
-""" Special layers for geological tasks. """
+"""Special layers for geological tasks."""
+
 import torch
 import numpy as np
 from torch import nn
@@ -9,9 +10,8 @@ import scipy
 from batchflow.models.torch import ResBlock
 
 
-
 class InstantaneousPhaseLayer(nn.Module):
-    """ Instantaneous phase computation along depth axis.
+    """Instantaneous phase computation along depth axis.
 
     Parameters
     ----------
@@ -21,22 +21,23 @@ class InstantaneousPhaseLayer(nn.Module):
         Transform phase from (-pi, pi) to (-pi / 2, pi / 2) to make it continuous or not, by default False.
         Transformation: f(phi) = abs(phi) - pi / 2.
     """
+
     def __init__(self, inputs=None, continuous=False, **kwargs):
         super().__init__()
         self.continuous = continuous
 
     def _hilbert(self, x):
-        """ Hilbert transformation. """
+        """Hilbert transformation."""
         N = x.shape[-1]
         fft = torch.fft.fft(x)
 
         h = torch.zeros(N, device=x.device)
         if N % 2 == 0:
             h[0] = h[N // 2] = 1
-            h[1:N // 2] = 2
+            h[1 : N // 2] = 2
         else:
             h[0] = 1
-            h[1:(N + 1) // 2] = 2
+            h[1 : (N + 1) // 2] = 2
         if x.ndim > 1:
             shape = [1] * x.ndim
             shape[-1] = N
@@ -46,23 +47,23 @@ class InstantaneousPhaseLayer(nn.Module):
         return result
 
     def _angle(self, x):
-        """ Compute angle of complex number. """
+        """Compute angle of complex number."""
         res = torch.atan(x.imag / x.real)
         res[x.real == 0] = np.pi
         res = res % (2 * np.pi) - np.pi
         if self.continuous:
-            res =  torch.abs(res) - np.pi / 2
+            res = torch.abs(res) - np.pi / 2
         return res
 
     def forward(self, x):
-        """ Forward pass. """
+        """Forward pass."""
         x = self._hilbert(x)
         x = self._angle(x)
         return x
 
 
 class MovingNormalizationLayer(nn.Module):
-    """ Normalize tensor by mean/std in moving window.
+    """Normalize tensor by mean/std in moving window.
 
     Parameters
     ----------
@@ -75,7 +76,8 @@ class MovingNormalizationLayer(nn.Module):
     fill_value : int, optional
         Value to fill constant regions with std=0, by default 0.
     """
-    def __init__(self, inputs, window=(1, 1, 100), padding='same', fill_value=0):
+
+    def __init__(self, inputs, window=(1, 1, 100), padding="same", fill_value=0):
         super().__init__()
         self.window = window
         self.fill_value = fill_value
@@ -85,21 +87,23 @@ class MovingNormalizationLayer(nn.Module):
             torch.ones((1, 1, *window), dtype=inputs.dtype).cuda(), requires_grad=False
         )
 
-        if padding == 'same':
+        if padding == "same":
             pad = [(w // 2, w - w // 2 - 1) for w in self.window]
             self.padding = (*pad[2], *pad[1], *pad[0], 0, 0, 0, 0)
         else:
             padding = None
 
     def init_normalizer_map(self, inputs):
-        """ Create normalization map. """
-        normalizer = torch.ones(expand_dims(inputs[:1]).shape, dtype=inputs.dtype, requires_grad=False)
+        """Create normalization map."""
+        normalizer = torch.ones(
+            expand_dims(inputs[:1]).shape, dtype=inputs.dtype, requires_grad=False
+        )
         normalizer = F.pad(normalizer.to(inputs.device), self.padding)
         return F.conv3d(normalizer, self.kernel)[0]
 
     @autocast(enabled=False)
     def forward(self, x):
-        """ Forward pass. """
+        """Forward pass."""
         normalization_map = self.init_normalizer_map(x)
 
         x = expand_dims(x)
@@ -110,18 +114,25 @@ class MovingNormalizationLayer(nn.Module):
             num = F.pad(x, self.padding)
 
         mean = F.conv3d(num, self.kernel) / normalization_map
-        mean_2 = F.conv3d(num ** 2, self.kernel) / normalization_map
-        std = torch.clip(mean_2 - mean ** 2, min=1e-10) ** 0.5
+        mean_2 = F.conv3d(num**2, self.kernel) / normalization_map
+        std = torch.clip(mean_2 - mean**2, min=1e-10) ** 0.5
 
         pad = self.padding
-        if self.padding == 'valid':
-            x = x[:, :, pad[4]:x.shape[2]-pad[5], pad[2]:x.shape[3]-pad[3], pad[0]:x.shape[4]-pad[1]]
+        if self.padding == "valid":
+            x = x[
+                :,
+                :,
+                pad[4] : x.shape[2] - pad[5],
+                pad[2] : x.shape[3] - pad[3],
+                pad[0] : x.shape[4] - pad[1],
+            ]
         result = (x - mean) / std
         result = torch.nan_to_num(result, nan=self.fill_value)
         return squeeze(result, self.ndim)
 
+
 class SemblanceLayer(nn.Module):
-    """ Semblance attribute.
+    """Semblance attribute.
 
     Parameters
     ----------
@@ -132,6 +143,7 @@ class SemblanceLayer(nn.Module):
     fill_value : int, optional
         Value to fill constant regions, by default 1.
     """
+
     def __init__(self, inputs, window=(1, 5, 20), fill_value=1):
         super().__init__()
         self.ndim = inputs.ndim
@@ -140,14 +152,22 @@ class SemblanceLayer(nn.Module):
         self.device = inputs.device
 
         self.kernels = [
-            torch.ones((1, 1, window[0], window[1], 1), dtype=inputs.dtype, requires_grad=False).to(self.device),
-            torch.ones((1, 1, 1, 1, window[2]), dtype=inputs.dtype, requires_grad=False).to(self.device),
-            torch.ones((1, 1, *window), dtype=inputs.dtype, requires_grad=False).to(self.device),
-            torch.ones((1, 1, window[0], window[1]), dtype=inputs.dtype, requires_grad=False).to(self.device)
+            torch.ones(
+                (1, 1, window[0], window[1], 1), dtype=inputs.dtype, requires_grad=False
+            ).to(self.device),
+            torch.ones(
+                (1, 1, 1, 1, window[2]), dtype=inputs.dtype, requires_grad=False
+            ).to(self.device),
+            torch.ones((1, 1, *window), dtype=inputs.dtype, requires_grad=False).to(
+                self.device
+            ),
+            torch.ones(
+                (1, 1, window[0], window[1]), dtype=inputs.dtype, requires_grad=False
+            ).to(self.device),
         ]
 
     def forward(self, x):
-        """ Forward pass. """
+        """Forward pass."""
         window = self.window
         x = expand_dims(x)
 
@@ -159,9 +179,11 @@ class SemblanceLayer(nn.Module):
         num = F.conv3d(num, self.kernels[1])
 
         denum = F.pad(x, (*padding[2], *padding[1], *padding[0], 0, 0, 0, 0))
-        denum = F.conv3d(denum ** 2, self.kernels[2])
+        denum = F.conv3d(denum**2, self.kernels[2])
 
-        normilizing = torch.ones(x.shape[:-1], dtype=x.dtype, requires_grad=False).to(x.device)
+        normilizing = torch.ones(x.shape[:-1], dtype=x.dtype, requires_grad=False).to(
+            x.device
+        )
         normilizing = F.pad(normilizing, (*padding[1], *padding[0], 0, 0, 0, 0))
         normilizing = F.conv2d(normilizing, self.kernels[3])
 
@@ -170,8 +192,9 @@ class SemblanceLayer(nn.Module):
 
         return squeeze(result, self.ndim)
 
+
 class FrequenciesFilterLayer(nn.Module):
-    """ Frequencies filter.
+    """Frequencies filter.
 
     Parameters
     ----------
@@ -182,16 +205,17 @@ class FrequenciesFilterLayer(nn.Module):
     window : int, optional
         Window width (corresponds to depth axis) to compute phases, by default 200.
     """
+
     def __init__(self, inputs=None, q=0.1, window=200):
         super().__init__()
         self.q = q
         self.window = window
 
     def forward(self, inputs):
-        """ Forward pass. """
+        """Forward pass."""
         inputs = inputs.view(-1, inputs.shape[-1])
         # TODO: remove disable after torch update
-        sfft = torch.stft(inputs, self.window, return_complex=True) #pylint: disable=unexpected-keyword-arg
+        sfft = torch.stft(inputs, self.window, return_complex=True)  # pylint: disable=unexpected-keyword-arg
         q_ = int(sfft.shape[-2] * self.q)
         sfft[:, :q_] = 0
         sfft[:, -q_:] = 0
@@ -199,7 +223,7 @@ class FrequenciesFilterLayer(nn.Module):
 
 
 class InputLayer(nn.Module):
-    """ Input layer with possibility of instantaneous phase concatenation.
+    """Input layer with possibility of instantaneous phase concatenation.
 
     Parameters
     ----------
@@ -216,8 +240,17 @@ class InputLayer(nn.Module):
     base_block : torch.nn.Module, optional
         Inputs transformations block, by default ResBlock.
     """
-    def __init__(self, inputs, normalization=False, phases=False, continuous=False,
-                 window=100, base_block=ResBlock, **kwargs):
+
+    def __init__(
+        self,
+        inputs,
+        normalization=False,
+        phases=False,
+        continuous=False,
+        window=100,
+        base_block=ResBlock,
+        **kwargs,
+    ):
         super().__init__()
         self.normalization = normalization
         self.phases = phases
@@ -234,13 +267,13 @@ class InputLayer(nn.Module):
         return x
 
     def forward(self, x):
-        """ Forward pass. """
+        """Forward pass."""
         if self.phases:
             phases = self.phase_layer(x)
 
         if self.normalization:
             x = self.normalization_layer(x)
-            x = torch.clip(x,  -10, 10) # TODO: remove clipping
+            x = torch.clip(x, -10, 10)  # TODO: remove clipping
 
         if self.phases:
             x = self._concat(x, phases)
@@ -250,7 +283,7 @@ class InputLayer(nn.Module):
 
 
 class GaussianLayer(nn.Module):
-    """ Layer for gaussian smoothing.
+    """Layer for gaussian smoothing.
 
     Parameters
     ----------
@@ -263,7 +296,8 @@ class GaussianLayer(nn.Module):
     sigma : float or None,  optional
 
     """
-    def __init__(self, inputs, kernel_size=5, sigma=None, padding='same'):
+
+    def __init__(self, inputs, kernel_size=5, sigma=None, padding="same"):
         super().__init__()
         self.ndim = inputs.ndim
         if isinstance(kernel_size, int):
@@ -280,9 +314,9 @@ class GaussianLayer(nn.Module):
         kernel = np.expand_dims(kernel, axis=[0, 1])
 
         self.kernel_size = kernel_size
-        if padding == 'same':
+        if padding == "same":
             self.padding = [(w // 2, w - w // 2 - 1) for w in self.kernel_size]
-        elif padding == 'valid':
+        elif padding == "valid":
             self.padding = None
         else:
             self.padding = padding
@@ -291,21 +325,23 @@ class GaussianLayer(nn.Module):
         ).to(inputs.device)
 
     def forward(self, x):
-        """ Forward pass. """
+        """Forward pass."""
         x = expand_dims(x)
         if self.padding is not None:
-            x = F.pad(x, (*self.padding[2], *self.padding[1], *self.padding[0], 0, 0, 0, 0))
+            x = F.pad(
+                x, (*self.padding[2], *self.padding[1], *self.padding[0], 0, 0, 0, 0)
+            )
         return squeeze(F.conv3d(x, self.kernel), self.ndim)
 
     def gaussian_kernel(self, kernel_size, sigma=None):
-        """ Create gaussian kernel of the specified size. """
+        """Create gaussian kernel of the specified size."""
         n = np.zeros(kernel_size)
         n[tuple(np.array(n.shape) // 2)] = 1
         return scipy.ndimage.gaussian_filter(n, sigma=sigma)
 
 
 def expand_dims(x):
-    """ Make tensor 5D. """
+    """Make tensor 5D."""
     if x.ndim == 4:
         x = x.view(x.shape[0], 1, *x.shape[-3:])
     elif x.ndim == 3:
@@ -314,8 +350,9 @@ def expand_dims(x):
         x = x.view(1, 1, 1, *x.shape)
     return x
 
+
 def squeeze(x, ndim):
-    """ Squeeze axes after :func:`~expand_dims`. """
+    """Squeeze axes after :func:`~expand_dims`."""
     if ndim == 4:
         return x[:, 0]
     if ndim == 3:
@@ -325,21 +362,29 @@ def squeeze(x, ndim):
     return x
 
 
-
-def compute_attribute(array, window=None, device='cuda:0', attribute='semblance', fill_value=None, **kwargs):
-    """ Compute semblance for the cube. """
+def compute_attribute(
+    array,
+    window=None,
+    device="cuda:0",
+    attribute="semblance",
+    fill_value=None,
+    **kwargs,
+):
+    """Compute semblance for the cube."""
     if isinstance(window, int):
         window = np.ones(3, dtype=np.int32) * window
     window = np.minimum(np.array(window), array.shape[-3:])
     inputs = torch.Tensor(array).to(device)
 
-    if attribute == 'semblance':
+    if attribute == "semblance":
         layer = SemblanceLayer(inputs, window=window, fill_value=fill_value or 1)
-    elif attribute == 'moving_normalization':
-        layer = MovingNormalizationLayer(inputs, window=window, fill_value=fill_value or 1, **kwargs)
-    elif attribute == 'phase':
+    elif attribute == "moving_normalization":
+        layer = MovingNormalizationLayer(
+            inputs, window=window, fill_value=fill_value or 1, **kwargs
+        )
+    elif attribute == "phase":
         layer = InstantaneousPhaseLayer(inputs, **kwargs)
-    elif attribute == 'frequencies_filter':
+    elif attribute == "frequencies_filter":
         layer = FrequenciesFilterLayer(inputs, window=window, **kwargs)
     result = layer(inputs)
     return result.cpu().numpy()

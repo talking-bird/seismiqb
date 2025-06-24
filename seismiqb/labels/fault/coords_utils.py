@@ -1,11 +1,13 @@
-""" Faults extraction helpers for 3D coordinates processing. """
+"""Faults extraction helpers for 3D coordinates processing."""
+
 import numpy as np
 from numba import njit
 import cv2 as cv
 
+
 # Coordinates operations
 def dilate_coords(coords, dilate=3, axis=0, max_value=None):
-    """ Dilate coordinates with (dilate, 1) structure along the given axis.
+    """Dilate coordinates with (dilate, 1) structure along the given axis.
 
     Note, the function returns unique and sorted coords.
 
@@ -23,8 +25,8 @@ def dilate_coords(coords, dilate=3, axis=0, max_value=None):
 
     # Create dilated coordinates
     for i in range(dilate):
-        start_idx, end_idx = i*len(coords), (i + 1)*len(coords)
-        dilated_coords[start_idx:end_idx, axis] += i - dilate//2
+        start_idx, end_idx = i * len(coords), (i + 1) * len(coords)
+        dilated_coords[start_idx:end_idx, axis] += i - dilate // 2
 
     # Clip to the valid values
     mask = dilated_coords[:, axis] >= 0
@@ -42,7 +44,7 @@ def dilate_coords(coords, dilate=3, axis=0, max_value=None):
 # Distance evaluation
 @njit
 def bboxes_intersected(bbox_1, bbox_2, axes=(0, 1, 2)):
-    """ Check bounding boxes intersection on preferred axes.
+    """Check bounding boxes intersection on preferred axes.
 
     Bboxes are intersected if they have at least 1 overlapping point.
 
@@ -54,15 +56,20 @@ def bboxes_intersected(bbox_1, bbox_2, axes=(0, 1, 2)):
         Axes to check bboxes intersection.
     """
     for axis in axes:
-        overlap_size = min(bbox_1[axis, 1], bbox_2[axis, 1]) - max(bbox_1[axis, 0], bbox_2[axis, 0]) + 1
+        overlap_size = (
+            min(bbox_1[axis, 1], bbox_2[axis, 1])
+            - max(bbox_1[axis, 0], bbox_2[axis, 0])
+            + 1
+        )
 
         if overlap_size < 1:
             return False
     return True
 
+
 @njit
 def bboxes_adjacent(bbox_1, bbox_2, adjacency=1):
-    """ Bounding boxes adjacency ranges.
+    """Bounding boxes adjacency ranges.
 
     Bboxes are adjacent if they are distant not more than on `adjacency` points.
 
@@ -87,8 +94,9 @@ def bboxes_adjacent(bbox_1, bbox_2, adjacency=1):
 
     return borders
 
+
 def bboxes_embedded(bbox_1, bbox_2, margin=3):
-    """ Check that one bounding box is inside the other (embedded).
+    """Check that one bounding box is inside the other (embedded).
 
     Parameters
     ----------
@@ -97,22 +105,27 @@ def bboxes_embedded(bbox_1, bbox_2, margin=3):
     margin : int
         Possible bboxes difference (on each axis) to decide that one is inside another.
     """
-    swap = np.count_nonzero(bbox_1[:, 1] >= bbox_2[:, 1]) <= 1 # is second not inside first
+    swap = (
+        np.count_nonzero(bbox_1[:, 1] >= bbox_2[:, 1]) <= 1
+    )  # is second not inside first
 
     if swap:
         bbox_1, bbox_2 = bbox_2, bbox_1
 
     for i in range(3):
-        is_embedded = (bbox_2[i, 0] >= bbox_1[i, 0] - margin) and (bbox_2[i, 1] <= bbox_1[i, 1] + margin)
+        is_embedded = (bbox_2[i, 0] >= bbox_1[i, 0] - margin) and (
+            bbox_2[i, 1] <= bbox_1[i, 1] + margin
+        )
 
         if not is_embedded:
             return is_embedded, swap
 
     return is_embedded, swap
 
+
 @njit
 def compute_distances(coords_1, coords_2, max_threshold=10000):
-    """ Find approximate minimum and maximum distances between two arrays of coordinates.
+    """Find approximate minimum and maximum distances between two arrays of coordinates.
     We assume coords to have the same length and compare only corresponding points.
     A little bit faster than difference between np.ndarrays with `np.max` and `np.min`.
 
@@ -140,8 +153,9 @@ def compute_distances(coords_1, coords_2, max_threshold=10000):
 
     return min_distance, max_distance
 
+
 def find_contour(coords, projection_axis):
-    """ Find closed contour of coords projection.
+    """Find closed contour of coords projection.
 
     Under the hood, we make a 2D coords projection and find its contour.
 
@@ -169,18 +183,21 @@ def find_contour(coords, projection_axis):
     contours, _ = cv.findContours(mask, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
 
     # Extract unique and sorted coords
-    contour = contours[0].reshape(len(contours[0]), 2) # Can be non-unique
+    contour = contours[0].reshape(len(contours[0]), 2)  # Can be non-unique
 
     contour_coords = np.zeros((len(contour), 3), np.int32)
     contour_coords[:, 1 - projection_axis] = contour[:, 1] + origin[0]
     contour_coords[:, 2] = contour[:, 0] + origin[1]
 
-    contour_coords = np.unique(contour_coords, axis=0) # np.unique is here for sorting and unification
+    contour_coords = np.unique(
+        contour_coords, axis=0
+    )  # np.unique is here for sorting and unification
     return contour_coords
+
 
 @njit
 def restore_coords_from_projection(coords, projection_buffer, axis):
-    """ Get values along `axis` for 2D projection coordinates from 3D coords.
+    """Get values along `axis` for 2D projection coordinates from 3D coords.
 
     Example
     -------
@@ -205,9 +222,11 @@ def restore_coords_from_projection(coords, projection_buffer, axis):
     known_axes = np.array([i for i in range(3) if i != axis])
 
     for i, buffer_line in enumerate(projection_buffer):
-        values =  coords[(coords[:, known_axes[0]] == buffer_line[known_axes[0]]) & \
-                         (coords[:, known_axes[1]] == buffer_line[known_axes[1]]),
-                         axis]
+        values = coords[
+            (coords[:, known_axes[0]] == buffer_line[known_axes[0]])
+            & (coords[:, known_axes[1]] == buffer_line[known_axes[1]]),
+            axis,
+        ]
 
         projection_buffer[i, axis] = min(values) if len(values) > 0 else -1
 

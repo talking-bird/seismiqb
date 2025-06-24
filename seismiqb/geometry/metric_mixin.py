@@ -1,14 +1,24 @@
-""" Collection of tools for evaluating quality of geometries. """
+"""Collection of tools for evaluating quality of geometries."""
+
 import numpy as np
 
 from batchflow import Notifier
 
 
-
 class MetricMixin:
-    """ Tools to evaluate geometry quality or compare multiple geometries. """
-    def compare(self, other, function, kernel_size=(5, 5), limits=None, chunk_size=(500, 500), pbar='t', **kwargs):
-        """ Compare two geometries by iterating over their values in lateral window.
+    """Tools to evaluate geometry quality or compare multiple geometries."""
+
+    def compare(
+        self,
+        other,
+        function,
+        kernel_size=(5, 5),
+        limits=None,
+        chunk_size=(500, 500),
+        pbar="t",
+        **kwargs,
+    ):
+        """Compare two geometries by iterating over their values in lateral window.
 
         Parameters
         ----------
@@ -35,7 +45,9 @@ class MetricMixin:
         high = window - low
 
         # Compute the shape of `function` output
-        array_example = self[0:kernel_size[0], 0:kernel_size[1]].reshape(-1, self.depth)
+        array_example = self[0 : kernel_size[0], 0 : kernel_size[1]].reshape(
+            -1, self.depth
+        )
         size = function(array_example, array_example, **kwargs).size
         metric_matrix = np.full((*self.spatial_shape, size), np.nan, dtype=np.float32)
         total = np.prod(self.shape[:2] - window)
@@ -47,23 +59,35 @@ class MetricMixin:
                     i_chunk_end = min(i_chunk_start + chunk_size[0], self.shape[0])
                     x_chunk_end = min(x_chunk_start + chunk_size[1], self.shape[1])
 
-                    chunk_locations = [slice(i_chunk_start, i_chunk_end),
-                                       slice(x_chunk_start, x_chunk_end),
-                                       limits]
-                    self_chunk  =  self.load_crop(chunk_locations)
+                    chunk_locations = [
+                        slice(i_chunk_start, i_chunk_end),
+                        slice(x_chunk_start, x_chunk_end),
+                        limits,
+                    ]
+                    self_chunk = self.load_crop(chunk_locations)
                     other_chunk = other.load_crop(chunk_locations)
                     chunk_shape = self_chunk.shape
 
                     # Iterate over chunks in lateral kernels
                     for i_anchor in range(low[0], chunk_shape[0] - high[0]):
                         for x_anchor in range(low[1], chunk_shape[1] - high[1]):
-                            i_kernel_slice = slice(i_anchor - low[0], i_anchor + high[0])
-                            x_kernel_slice = slice(x_anchor - low[1], x_anchor + high[1])
+                            i_kernel_slice = slice(
+                                i_anchor - low[0], i_anchor + high[0]
+                            )
+                            x_kernel_slice = slice(
+                                x_anchor - low[1], x_anchor + high[1]
+                            )
 
-                            self_subset  =  self_chunk[i_kernel_slice, x_kernel_slice].reshape(-1, chunk_shape[-1])
-                            other_subset = other_chunk[i_kernel_slice, x_kernel_slice].reshape(-1, chunk_shape[-1])
+                            self_subset = self_chunk[
+                                i_kernel_slice, x_kernel_slice
+                            ].reshape(-1, chunk_shape[-1])
+                            other_subset = other_chunk[
+                                i_kernel_slice, x_kernel_slice
+                            ].reshape(-1, chunk_shape[-1])
                             result = function(self_subset, other_subset, **kwargs)
 
-                            metric_matrix[i_chunk_start + i_anchor, x_chunk_start + x_anchor] = result
+                            metric_matrix[
+                                i_chunk_start + i_anchor, x_chunk_start + x_anchor
+                            ] = result
                             progress_bar.update()
         return metric_matrix

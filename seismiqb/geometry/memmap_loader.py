@@ -1,4 +1,5 @@
-""" Class to load headers/traces from SEG-Y via memory mapping. """
+"""Class to load headers/traces from SEG-Y via memory mapping."""
+
 import os
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor
@@ -14,18 +15,19 @@ try:
     from batchflow import Notifier
 except ImportError:
     from tqdm.auto import tqdm
+
     def Notifier(pbar, *args, **kwargs):
-        """ Progress bar. """
+        """Progress bar."""
         if pbar:
             return tqdm(*args, **kwargs)
         return lambda iterator: iterator
 
+
 from .segyio_loader import SegyioLoader
 
 
-
 class MemmapLoader(SegyioLoader):
-    """ Custom reader/writer for SEG-Y files.
+    """Custom reader/writer for SEG-Y files.
     Relies on memory mapping mechanism for actual reads of headers and traces.
 
     SEG-Y description
@@ -65,42 +67,62 @@ class MemmapLoader(SegyioLoader):
         `numpy` superiority allows to speed up reading, especially in case of trace slicing along the samples axis.
         This is extra relevant in case of loading horizontal (depth) slices.
     """
-    def __init__(self, path, endian='big', strict=False, ignore_geometry=True):
+
+    def __init__(self, path, endian="big", strict=False, ignore_geometry=True):
         # Re-use most of the file-wide attributes from the `segyio` loader
-        super().__init__(path=path, endian=endian, strict=strict, ignore_geometry=ignore_geometry)
+        super().__init__(
+            path=path, endian=endian, strict=strict, ignore_geometry=ignore_geometry
+        )
 
         # Endian symbol for creating `numpy` dtypes
         self.endian_symbol = self.ENDIANNESS_TO_SYMBOL[endian]
 
         # Prefix attributes with `file`/`mmap` to avoid confusion.
         # TODO: maybe, add `segy` prefix to the attributes of the base class?
-        self.file_format = self.metrics['format']
-        self.file_traces_offset = self.metrics['trace0']
-        self.file_trace_size = self.metrics['trace_bsize']
+        self.file_format = self.metrics["format"]
+        self.file_traces_offset = self.metrics["trace0"]
+        self.file_trace_size = self.metrics["trace_bsize"]
 
         # Dtype for data of each trace
         mmap_trace_data_dtype = self.SEGY_FORMAT_TO_TRACE_DATA_DTYPE[self.file_format]
         if isinstance(mmap_trace_data_dtype, str):
             mmap_trace_data_dtype = self.endian_symbol + mmap_trace_data_dtype
         self.mmap_trace_data_dtype = mmap_trace_data_dtype
-        self.mmap_trace_data_size = self.n_samples if self.file_format != 1 else (self.n_samples, 4)
+        self.mmap_trace_data_size = (
+            self.n_samples if self.file_format != 1 else (self.n_samples, 4)
+        )
 
         # Dtype of each trace
         # TODO: maybe, use `np.uint8` as dtype instead of `np.void` for headers as it has nicer repr
-        self.mmap_trace_dtype = np.dtype([('headers', np.void, self.TRACE_HEADER_SIZE),
-                                          ('data', self.mmap_trace_data_dtype, self.mmap_trace_data_size)])
+        self.mmap_trace_dtype = np.dtype(
+            [
+                ("headers", np.void, self.TRACE_HEADER_SIZE),
+                ("data", self.mmap_trace_data_dtype, self.mmap_trace_data_size),
+            ]
+        )
         self.data_mmap = self._construct_data_mmap()
 
     def _construct_data_mmap(self):
-        """ Create a memory map with the first 240 bytes (headers) of each trace skipped. """
-        return np.memmap(filename=self.path, mode='r', shape=self.n_traces, dtype=self.mmap_trace_dtype,
-                         offset=self.file_traces_offset)["data"]
-
+        """Create a memory map with the first 240 bytes (headers) of each trace skipped."""
+        return np.memmap(
+            filename=self.path,
+            mode="r",
+            shape=self.n_traces,
+            dtype=self.mmap_trace_dtype,
+            offset=self.file_traces_offset,
+        )["data"]
 
     # Headers
-    def load_headers(self, headers, chunk_size=25_000, max_workers=4, pbar=False,
-                     reconstruct_tsf=True, **kwargs):
-        """ Load requested trace headers from a SEG-Y file for each trace into a dataframe.
+    def load_headers(
+        self,
+        headers,
+        chunk_size=25_000,
+        max_workers=4,
+        pbar=False,
+        reconstruct_tsf=True,
+        **kwargs,
+    ):
+        """Load requested trace headers from a SEG-Y file for each trace into a dataframe.
         If needed, we reconstruct the `'TRACE_SEQUENCE_FILE'` manually be re-indexing traces.
 
         Under the hood, we create a memory mapping over the SEG-Y file, and view it with a special dtype.
@@ -124,14 +146,20 @@ class MemmapLoader(SegyioLoader):
             Whether to reconstruct `TRACE_SEQUENCE_FILE` manually.
         """
         _ = kwargs
-        if reconstruct_tsf and 'TRACE_SEQUENCE_FILE' in headers:
+        if reconstruct_tsf and "TRACE_SEQUENCE_FILE" in headers:
             headers = list(headers)
-            headers.remove('TRACE_SEQUENCE_FILE')
+            headers.remove("TRACE_SEQUENCE_FILE")
 
         # Construct mmap dtype: detailed for headers
-        mmap_trace_headers_dtype = self._make_mmap_headers_dtype(headers, endian_symbol=self.endian_symbol)
-        mmap_trace_dtype = np.dtype([*mmap_trace_headers_dtype,
-                                     ('data', self.mmap_trace_data_dtype, self.mmap_trace_data_size)])
+        mmap_trace_headers_dtype = self._make_mmap_headers_dtype(
+            headers, endian_symbol=self.endian_symbol
+        )
+        mmap_trace_dtype = np.dtype(
+            [
+                *mmap_trace_headers_dtype,
+                ("data", self.mmap_trace_data_dtype, self.mmap_trace_data_size),
+            ]
+        )
 
         # Split the whole file into chunks no larger than `chunk_size`
         n_chunks, last_chunk_size = divmod(self.n_traces, chunk_size)
@@ -153,25 +181,39 @@ class MemmapLoader(SegyioLoader):
                     progress_bar.update(chunk_size)
 
                 for start, chunk_size_ in zip(chunk_starts, chunk_sizes):
-                    future = executor.submit(read_chunk, path=self.path,
-                                             shape=self.n_traces, offset=self.file_traces_offset,
-                                             dtype=mmap_trace_dtype, headers=headers,
-                                             start=start, chunk_size=chunk_size_)
+                    future = executor.submit(
+                        read_chunk,
+                        path=self.path,
+                        shape=self.n_traces,
+                        offset=self.file_traces_offset,
+                        dtype=mmap_trace_dtype,
+                        headers=headers,
+                        start=start,
+                        chunk_size=chunk_size_,
+                    )
                     future.add_done_callback(partial(callback, start=start))
         dataframe = pd.DataFrame(buffer, columns=headers)
 
         if reconstruct_tsf:
-            dataframe['TRACE_SEQUENCE_FILE'] = self.make_tsf_header()
+            dataframe["TRACE_SEQUENCE_FILE"] = self.make_tsf_header()
         return dataframe
 
-    def load_header(self, header, chunk_size=25_000, max_workers=None, pbar=False, **kwargs):
-        """ Load exactly one header. """
-        return self.load_headers(headers=[header], chunk_size=chunk_size, max_workers=max_workers,
-                                 pbar=pbar, reconstruct_tsf=False, **kwargs)
+    def load_header(
+        self, header, chunk_size=25_000, max_workers=None, pbar=False, **kwargs
+    ):
+        """Load exactly one header."""
+        return self.load_headers(
+            headers=[header],
+            chunk_size=chunk_size,
+            max_workers=max_workers,
+            pbar=pbar,
+            reconstruct_tsf=False,
+            **kwargs,
+        )
 
     @staticmethod
-    def _make_mmap_headers_dtype(headers, endian_symbol='>'):
-        """ Create list of `numpy` dtypes to view headers data.
+    def _make_mmap_headers_dtype(headers, endian_symbol=">"):
+        """Create list of `numpy` dtypes to view headers data.
 
         Defines a dtype for exactly 240 bytes, where each of the requested headers would have its own named subdtype,
         and the rest of bytes are lumped into `np.void` of certain lengths.
@@ -192,8 +234,12 @@ class MemmapLoader(SegyioLoader):
         header_to_byte = segyio.tracefield.keys
         byte_to_header = {val: key for key, val in header_to_byte.items()}
         start_bytes = sorted(header_to_byte.values())
-        byte_to_len = {start: end - start
-                       for start, end in zip(start_bytes, start_bytes[1:] + [MemmapLoader.TRACE_HEADER_SIZE + 1])}
+        byte_to_len = {
+            start: end - start
+            for start, end in zip(
+                start_bytes, start_bytes[1:] + [MemmapLoader.TRACE_HEADER_SIZE + 1]
+            )
+        }
         requested_headers_bytes = {header_to_byte[header] for header in headers}
 
         # Iterate over all headers
@@ -204,14 +250,14 @@ class MemmapLoader(SegyioLoader):
         for byte, header_len in byte_to_len.items():
             if byte in requested_headers_bytes:
                 if void_counter:
-                    unused_dtype = (f'unused_{unused_counter}', np.void, void_counter)
+                    unused_dtype = (f"unused_{unused_counter}", np.void, void_counter)
                     dtype_list.append(unused_dtype)
 
                     unused_counter += 1
                     void_counter = 0
 
                 header_name = byte_to_header[byte]
-                value_dtype = 'i2' if header_len == 2 else 'i4'
+                value_dtype = "i2" if header_len == 2 else "i4"
                 value_dtype = endian_symbol + value_dtype
                 header_dtype = (header_name, value_dtype)
                 dtype_list.append(header_dtype)
@@ -219,13 +265,13 @@ class MemmapLoader(SegyioLoader):
                 void_counter += header_len
 
         if void_counter:
-            unused_dtype = (f'unused_{unused_counter}', np.void, void_counter)
+            unused_dtype = (f"unused_{unused_counter}", np.void, void_counter)
             dtype_list.append(unused_dtype)
         return dtype_list
 
     # Data loading
     def load_traces(self, indices, limits=None, buffer=None):
-        """ Load traces by their indices.
+        """Load traces by their indices.
         Under the hood, we use a pre-made memory mapping over the file, where trace data is viewed with a special dtype.
         Regardless of the numerical dtype of SEG-Y file, we output IEEE float32:
         for IBM floats, that requires an additional conversion.
@@ -244,18 +290,18 @@ class MemmapLoader(SegyioLoader):
         if self.file_format != 1:
             traces = self.data_mmap[indices, limits]
         else:
-            traces = self.data_mmap[indices, limits.start:limits.stop]
+            traces = self.data_mmap[indices, limits.start : limits.stop]
             if limits.step != 1:
-                traces = traces[:, ::limits.step]
+                traces = traces[:, :: limits.step]
             traces = self._ibm_to_ieee(traces)
 
         if buffer is None:
-            return np.require(traces, dtype=self.dtype, requirements='C')
+            return np.require(traces, dtype=self.dtype, requirements="C")
         buffer[:] = traces
         return buffer
 
     def load_depth_slices(self, indices, buffer=None):
-        """ Load horizontal (depth) slices of the data.
+        """Load horizontal (depth) slices of the data.
         Requires a ~full sweep through SEG-Y, therefore is slow.
 
         Parameters
@@ -271,22 +317,29 @@ class MemmapLoader(SegyioLoader):
         depth_slices = depth_slices.T
 
         if buffer is None:
-            return np.require(depth_slices, dtype=np.float32, requirements='C')
+            return np.require(depth_slices, dtype=np.float32, requirements="C")
         buffer[:] = depth_slices
         return buffer
 
     def _ibm_to_ieee(self, array):
-        """ Convert IBM floats to regular IEEE ones. """
+        """Convert IBM floats to regular IEEE ones."""
         array_bytes = (array[:, :, 0], array[:, :, 1], array[:, :, 2], array[:, :, 3])
         if self.endian in {"little", "lsb"}:
             array_bytes = array_bytes[::-1]
         return ibm_to_ieee(*array_bytes)
 
-
     # Conversion to other SEG-Y formats (data dtype)
-    def convert(self, path=None, format=8, transform=None, chunk_size=25_000, max_workers=4,
-                pbar='t', overwrite=True):
-        """ Convert SEG-Y file to a different `format`: dtype of data values.
+    def convert(
+        self,
+        path=None,
+        format=8,
+        transform=None,
+        chunk_size=25_000,
+        max_workers=4,
+        pbar="t",
+        overwrite=True,
+    ):
+        """Convert SEG-Y file to a different `format`: dtype of data values.
         Keeps the same binary header (except for the 3225 byte, which stores the format).
         Keeps the same header values for each trace: essentially, only the values of each trace are transformed.
 
@@ -313,41 +366,53 @@ class MemmapLoader(SegyioLoader):
         overwrite : bool
             Whether to overwrite existing `path` or raise an exception.
         """
-        #pylint: disable=redefined-builtin
+        # pylint: disable=redefined-builtin
         # Default path
         if path is None:
             dirname = os.path.dirname(self.path)
             basename = os.path.basename(self.path)
-            path = os.path.join(dirname, basename.replace('.', f'_f{format}.'))
+            path = os.path.join(dirname, basename.replace(".", f"_f{format}."))
 
         # Compute target dtype, itemsize, size of the dst file
         dst_dtype = self.endian_symbol + self.SEGY_FORMAT_TO_TRACE_DATA_DTYPE[format]
         dst_itemsize = np.dtype(dst_dtype).itemsize
-        dst_size = self.file_traces_offset + self.n_traces * (self.TRACE_HEADER_SIZE + self.n_samples * dst_itemsize)
+        dst_size = self.file_traces_offset + self.n_traces * (
+            self.TRACE_HEADER_SIZE + self.n_samples * dst_itemsize
+        )
 
         # Exceptions
         traces = self.load_traces([0])
         if transform(traces).dtype != dst_dtype:
-            raise ValueError('dtype of `dst` is not the same as the one returned by `transform`!.'
-                             f' {dst_dtype}!={transform(traces).dtype}')
+            raise ValueError(
+                "dtype of `dst` is not the same as the one returned by `transform`!."
+                f" {dst_dtype}!={transform(traces).dtype}"
+            )
 
         if os.path.exists(path) and not overwrite:
-            raise OSError(f'File {path} already exists! Set `overwrite=True` to ignore this error.')
+            raise OSError(
+                f"File {path} already exists! Set `overwrite=True` to ignore this error."
+            )
 
         # Serialize `transform`
         transform = dill.dumps(transform)
 
         # Create new file and copy binary header
-        src_mmap = np.memmap(self.path, mode='r')
-        dst_mmap = np.memmap(path, mode='w+', shape=(dst_size,))
-        dst_mmap[:self.file_traces_offset] = src_mmap[:self.file_traces_offset]
+        src_mmap = np.memmap(self.path, mode="r")
+        dst_mmap = np.memmap(path, mode="w+", shape=(dst_size,))
+        dst_mmap[: self.file_traces_offset] = src_mmap[: self.file_traces_offset]
 
         # Replace `format` bytes
-        dst_mmap[3225-1:3225-1+2] = np.array([format], dtype=self.endian_symbol + 'u2').view('u1')
+        dst_mmap[3225 - 1 : 3225 - 1 + 2] = np.array(
+            [format], dtype=self.endian_symbol + "u2"
+        ).view("u1")
 
         # Prepare dst dtype
-        dst_trace_dtype = np.dtype([('headers', np.void, self.TRACE_HEADER_SIZE),
-                                    ('data', dst_dtype, self.n_samples)])
+        dst_trace_dtype = np.dtype(
+            [
+                ("headers", np.void, self.TRACE_HEADER_SIZE),
+                ("data", dst_dtype, self.n_samples),
+            ]
+        )
 
         # Split the whole file into chunks no larger than `chunk_size`
         n_chunks, last_chunk_size = divmod(self.n_traces, chunk_size)
@@ -358,30 +423,40 @@ class MemmapLoader(SegyioLoader):
 
         # Iterate over chunks
         name = os.path.basename(path)
-        with Notifier(pbar, total=self.n_traces, desc=f'Convert to `{name}`', ncols=110) as progress_bar:
+        with Notifier(
+            pbar, total=self.n_traces, desc=f"Convert to `{name}`", ncols=110
+        ) as progress_bar:
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
+
                 def callback(future):
                     chunk_size = future.result()
                     progress_bar.update(chunk_size)
 
                 for start, chunk_size_ in zip(chunk_starts, chunk_sizes):
-                    future = executor.submit(convert_chunk,
-                                             src_path=self.path, dst_path=path,
-                                             shape=self.n_traces, offset=self.file_traces_offset,
-                                             src_dtype=self.mmap_trace_dtype, dst_dtype=dst_trace_dtype,
-                                             endian=self.endian, transform=transform,
-                                             start=start, chunk_size=chunk_size_)
+                    future = executor.submit(
+                        convert_chunk,
+                        src_path=self.path,
+                        dst_path=path,
+                        shape=self.n_traces,
+                        offset=self.file_traces_offset,
+                        src_dtype=self.mmap_trace_dtype,
+                        dst_dtype=dst_trace_dtype,
+                        endian=self.endian,
+                        transform=transform,
+                        start=start,
+                        chunk_size=chunk_size_,
+                    )
                     future.add_done_callback(callback)
         return path
 
 
 def read_chunk(path, shape, offset, dtype, headers, start, chunk_size):
-    """ Read headers from one chunk.
+    """Read headers from one chunk.
     We create memory mapping anew in each worker, as it is easier and creates no significant overhead.
     """
     # mmap is created over the entire file as
     # creating data over the requested chunk only does not speed up anything
-    mmap = np.memmap(filename=path, mode='r', shape=shape, offset=offset, dtype=dtype)
+    mmap = np.memmap(filename=path, mode="r", shape=shape, offset=offset, dtype=dtype)
 
     buffer = np.empty((chunk_size, len(headers)), dtype=np.int32)
     for i, header in enumerate(headers):
@@ -389,39 +464,58 @@ def read_chunk(path, shape, offset, dtype, headers, start, chunk_size):
     return buffer
 
 
-def convert_chunk(src_path, dst_path, shape, offset, src_dtype, dst_dtype, endian, transform, start, chunk_size):
-    """ Copy the headers, transform and write data from one chunk.
+def convert_chunk(
+    src_path,
+    dst_path,
+    shape,
+    offset,
+    src_dtype,
+    dst_dtype,
+    endian,
+    transform,
+    start,
+    chunk_size,
+):
+    """Copy the headers, transform and write data from one chunk.
     We create all memory mappings anew in each worker, as it is easier and creates no significant overhead.
     """
     # Deserialize `transform`
     transform = dill.loads(transform)
 
     # Create mmaps: src is read-only, dst is read-write
-    src_mmap = np.memmap(src_path, mode='r', shape=shape, offset=offset, dtype=src_dtype)
-    dst_mmap = np.memmap(dst_path, mode='r+', shape=shape, offset=offset, dtype=dst_dtype)
+    src_mmap = np.memmap(
+        src_path, mode="r", shape=shape, offset=offset, dtype=src_dtype
+    )
+    dst_mmap = np.memmap(
+        dst_path, mode="r+", shape=shape, offset=offset, dtype=dst_dtype
+    )
 
     # Load all data from chunk
     src_traces = src_mmap[start : start + chunk_size]
     dst_traces = dst_mmap[start : start + chunk_size]
 
     # If `src_traces_data` is in IBM float, convert to float32
-    src_traces_data = src_traces['data']
+    src_traces_data = src_traces["data"]
     if len(src_traces_data.shape) == 3:
-        array_bytes = (src_traces_data[:, :, 0],src_traces_data[:, :, 1],
-                       src_traces_data[:, :, 2], src_traces_data[:, :, 3])
+        array_bytes = (
+            src_traces_data[:, :, 0],
+            src_traces_data[:, :, 1],
+            src_traces_data[:, :, 2],
+            src_traces_data[:, :, 3],
+        )
         if endian in {"little", "lsb"}:
             array_bytes = array_bytes[::-1]
         src_traces_data = ibm_to_ieee(*array_bytes)
 
     # Copy headers, write transformed data
-    dst_traces['headers'] = src_traces['headers']
-    dst_traces['data'] = transform(src_traces_data)
+    dst_traces["headers"] = src_traces["headers"]
+    dst_traces["data"] = transform(src_traces_data)
     return chunk_size
 
 
 @njit(nogil=True, parallel=True)
 def ibm_to_ieee(hh, hl, lh, ll):
-    """ Convert 4 arrays representing individual bytes of IBM 4-byte floats into a single array of floats.
+    """Convert 4 arrays representing individual bytes of IBM 4-byte floats into a single array of floats.
     Input arrays are ordered from most to least significant bytes and have `np.uint8` dtypes.
     The result is returned as an `np.float32` array.
     """
@@ -432,6 +526,6 @@ def ibm_to_ieee(hh, hl, lh, ll):
             mant = (((np.int32(hl[i, j]) << 8) | lh[i, j]) << 8) | ll[i, j]
             if hh[i, j] & 0x80:
                 mant = -mant
-            exp16 = (np.int8(hh[i, j]) & np.int8(0x7f)) - 70
+            exp16 = (np.int8(hh[i, j]) & np.int8(0x7F)) - 70
             res[i, j] = mant * 16.0**exp16
     return res

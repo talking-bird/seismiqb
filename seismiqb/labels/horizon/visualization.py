@@ -1,4 +1,5 @@
-""" Mixin for horizon visualization. """
+"""Mixin for horizon visualization."""
+
 from copy import copy
 from textwrap import dedent
 
@@ -10,10 +11,10 @@ from ...plotters import show_3d
 from ...utils import AugmentedList, DelegatingList, filter_simplices
 
 
-
 class HorizonVisualizationMixin(VisualizationMixin):
-    """ Methods for textual and visual representation of a horizon. """
-    #pylint: disable=protected-access
+    """Methods for textual and visual representation of a horizon."""
+
+    # pylint: disable=protected-access
     def __repr__(self):
         return f"""<Horizon `{self.name}` for `{self.field.short_name}` at {hex(id(self))}>"""
 
@@ -40,10 +41,9 @@ class HorizonVisualizationMixin(VisualizationMixin):
         """
         return dedent(msg)
 
-
     # 2D
     def find_self(self):
-        """ Get reference to the instance in a field.
+        """Get reference to the instance in a field.
         If it was loaded/added correctly, then it should be one of `loaded_labels`.
         Otherwise, we add it in a fake attribute and remove later.
         """
@@ -53,50 +53,62 @@ class HorizonVisualizationMixin(VisualizationMixin):
             if isinstance(labels, list):
                 for idx, label in enumerate(labels):
                     if label is self:
-                        return f'{src}:{idx}'
+                        return f"{src}:{idx}"
 
         # Instance is not attached to a field: add it temporarily (clean-up when finish plot creation)
         self.field._unknown_label = AugmentedList([self])
-        self.field.loaded_labels.append('_unknown_label')
-        return '_unknown_label:0'
+        self.field.loaded_labels.append("_unknown_label")
+        return "_unknown_label:0"
 
     @staticmethod
     def _show_add_prefix(attribute, prefix=None):
         if isinstance(attribute, str):
-            attribute = ('/'.join([prefix, attribute])).replace('//', '/')
+            attribute = ("/".join([prefix, attribute])).replace("//", "/")
         elif isinstance(attribute, dict):
-            attribute['src'] = ('/'.join([prefix, attribute['src']])).replace('//', '/')
+            attribute["src"] = ("/".join([prefix, attribute["src"]])).replace("//", "/")
         return attribute
 
-
-    def show(self, attributes='depths', mode='image', show=True, **kwargs):
-        """ Field visualization with custom naming scheme. """
+    def show(self, attributes="depths", mode="image", show=True, **kwargs):
+        """Field visualization with custom naming scheme."""
         attributes = DelegatingList(attributes)
-        attributes = attributes.map(lambda item: copy(item) if isinstance(item, dict) else item)
+        attributes = attributes.map(
+            lambda item: copy(item) if isinstance(item, dict) else item
+        )
         attributes = attributes.map(self._show_add_prefix, prefix=self.find_self())
 
         kwargs = {
-            'suptitle': f'`{self.name}` on field `{self.field.short_name}`',
-            **kwargs
+            "suptitle": f"`{self.name}` on field `{self.field.short_name}`",
+            **kwargs,
         }
         plotter = self.field.show(attributes=attributes, mode=mode, show=show, **kwargs)
 
         # Clean-up
-        if self.field.loaded_labels[-1] == '_unknown_label':
-            delattr(self.field, '_unknown_label')
+        if self.field.loaded_labels[-1] == "_unknown_label":
+            delattr(self.field, "_unknown_label")
             self.field.loaded_labels.pop(-1)
 
         return plotter
 
     def compute_auto_zoom(self, index, axis=None, zoom_margin=100):
-        """ Get slice around the horizon without zero-traces on bounds. """
+        """Get slice around the horizon without zero-traces on bounds."""
         bounds = self.field.geometry.compute_auto_zoom(index, axis)[0]
         return (bounds, slice(self.d_min - zoom_margin, self.d_max + zoom_margin))
 
     # 3D
-    def show_3d(self, n_points=100, threshold=100., z_ratio=1., zoom=None, show_axes=True,
-                width=1200, height=1200, margin=(0, 0, 100), savepath=None, **kwargs):
-        """ Interactive 3D plot. Roughly, does the following:
+    def show_3d(
+        self,
+        n_points=100,
+        threshold=100.0,
+        z_ratio=1.0,
+        zoom=None,
+        show_axes=True,
+        width=1200,
+        height=1200,
+        margin=(0, 0, 100),
+        savepath=None,
+        **kwargs,
+    ):
+        """Interactive 3D plot. Roughly, does the following:
             - select `n` points to represent the horizon surface
             - triangulate those points
             - remove some of the triangles on conditions
@@ -124,20 +136,39 @@ class HorizonVisualizationMixin(VisualizationMixin):
         kwargs : dict
             Other arguments of plot creation.
         """
-        title = f'Horizon `{self.short_name}` on `{self.field.short_name}`'
+        title = f"Horizon `{self.short_name}` on `{self.field.short_name}`"
         aspect_ratio = (self.i_length / self.x_length, 1, z_ratio)
-        axis_labels = (self.field.index_headers[0], self.field.index_headers[1], 'DEPTH')
+        axis_labels = (
+            self.field.index_headers[0],
+            self.field.index_headers[1],
+            "DEPTH",
+        )
         if zoom is None:
             zoom = [slice(0, i) for i in self.field.shape]
         zoom[-1] = slice(self.d_min, self.d_max)
 
         x, y, z, simplices = self.make_triangulation(n_points, threshold, zoom)
 
-        show_3d(x, y, z, simplices, title, zoom, None, show_axes, aspect_ratio,
-                axis_labels, width, height, margin, savepath, **kwargs)
+        show_3d(
+            x,
+            y,
+            z,
+            simplices,
+            title,
+            zoom,
+            None,
+            show_axes,
+            aspect_ratio,
+            axis_labels,
+            width,
+            height,
+            margin,
+            savepath,
+            **kwargs,
+        )
 
     def make_triangulation(self, n_points, threshold, slices, **kwargs):
-        """ Create triangultaion of horizon.
+        """Create triangultaion of horizon.
 
         Parameters
         ----------
@@ -162,8 +193,12 @@ class HorizonVisualizationMixin(VisualizationMixin):
         weights_matrix[np.abs(weights_matrix) > 100] = np.nan
 
         idx = np.stack(np.nonzero(self.full_matrix > 0), axis=0)
-        mask_1 = (idx <= np.array([slices[0].stop, slices[1].stop]).reshape(2, 1)).all(axis=0)
-        mask_2 = (idx >= np.array([slices[0].start, slices[1].start]).reshape(2, 1)).all(axis=0)
+        mask_1 = (idx <= np.array([slices[0].stop, slices[1].stop]).reshape(2, 1)).all(
+            axis=0
+        )
+        mask_2 = (
+            idx >= np.array([slices[0].start, slices[1].start]).reshape(2, 1)
+        ).all(axis=0)
         mask = np.logical_and(mask_1, mask_2)
         idx = idx[:, mask]
 
@@ -180,13 +215,17 @@ class HorizonVisualizationMixin(VisualizationMixin):
 
         # Remove from grid points with no horizon in it
         depths = self.full_matrix[ilines, xlines]
-        mask = (depths != self.FILL_VALUE)
+        mask = depths != self.FILL_VALUE
         x = ilines[mask]
         y = xlines[mask]
         z = depths[mask]
 
         # Triangulate points and remove some of the triangles
         tri = Delaunay(np.vstack([x, y]).T)
-        simplices = filter_simplices(simplices=tri.simplices, points=tri.points,
-                                     matrix=self.full_matrix, threshold=threshold)
+        simplices = filter_simplices(
+            simplices=tri.simplices,
+            points=tri.points,
+            matrix=self.full_matrix,
+            threshold=threshold,
+        )
         return x, y, z, simplices

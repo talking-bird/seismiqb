@@ -1,4 +1,4 @@
-""" Approximation utilities to convert cloud of points to sticks. """
+"""Approximation utilities to convert cloud of points to sticks."""
 
 import numpy as np
 from sklearn.decomposition import PCA
@@ -8,9 +8,16 @@ from numba import njit
 from .postprocessing import thin_line, split_array
 
 
-def points_to_sticks(points, sticks_step=10, nodes_step='auto', fault_orientation=None, stick_orientation=2,
-                     threshold=5, move_bounds=False):
-    """ Get sticks from fault which is represented as a cloud of points.
+def points_to_sticks(
+    points,
+    sticks_step=10,
+    nodes_step="auto",
+    fault_orientation=None,
+    stick_orientation=2,
+    threshold=5,
+    move_bounds=False,
+):
+    """Get sticks from fault which is represented as a cloud of points.
 
     Parameters
     ----------
@@ -39,7 +46,9 @@ def points_to_sticks(points, sticks_step=10, nodes_step='auto', fault_orientatio
     if fault_orientation is None:
         pca = PCA(1)
         pca.fit(points)
-        fault_orientation = 0 if np.abs(pca.components_[0][0]) > np.abs(pca.components_[0][1]) else 1
+        fault_orientation = (
+            0 if np.abs(pca.components_[0][0]) > np.abs(pca.components_[0][1]) else 1
+        )
 
     if stick_orientation != 2:
         fault_orientation = 2
@@ -52,15 +61,21 @@ def points_to_sticks(points, sticks_step=10, nodes_step='auto', fault_orientatio
 
     sticks = []
 
-    indices = [i for i, slide_points in enumerate(slides) if slide_points[0, fault_orientation] % sticks_step == 0]
+    indices = [
+        i
+        for i, slide_points in enumerate(slides)
+        if slide_points[0, fault_orientation] % sticks_step == 0
+    ]
 
     if move_bounds and 0 not in indices:
         first_stick = slides[0]
         first_stick[:, fault_orientation] = max(
-            0, first_stick[0, fault_orientation] - (first_stick[0, fault_orientation] % sticks_step)
+            0,
+            first_stick[0, fault_orientation]
+            - (first_stick[0, fault_orientation] % sticks_step),
         )
 
-    if move_bounds and len(slides)-1 not in indices:
+    if move_bounds and len(slides) - 1 not in indices:
         last_stick = slides[-1]
         shift = sticks_step - last_stick[0, fault_orientation] % sticks_step
         if shift == sticks_step:
@@ -76,14 +91,22 @@ def points_to_sticks(points, sticks_step=10, nodes_step='auto', fault_orientatio
         slide_points = slide_points[np.argsort(slide_points[:, stick_orientation])]
         slide_points = thin_line(slide_points, stick_orientation)
         if len(slide_points) > 5:
-            nodes = find_stick_nodes(points=slide_points, fault_orientation=fault_orientation,
-                                     stick_orientation=stick_orientation, nodes_step=nodes_step,
-                                     threshold=threshold).astype('float32')
+            nodes = find_stick_nodes(
+                points=slide_points,
+                fault_orientation=fault_orientation,
+                stick_orientation=stick_orientation,
+                nodes_step=nodes_step,
+                threshold=threshold,
+            ).astype("float32")
 
             # Remove redundant nodes from sticks with the large number of nodes
-            if len(nodes) > 4 and nodes_step == 'auto':
+            if len(nodes) > 4 and nodes_step == "auto":
                 normal = 3 - fault_orientation - stick_orientation
-                nodes = nodes[np.unique(remove_redundant_nodes(nodes[:, [normal, stick_orientation]]))]
+                nodes = nodes[
+                    np.unique(
+                        remove_redundant_nodes(nodes[:, [normal, stick_orientation]])
+                    )
+                ]
         else:
             nodes = slide_points[[0, -1]]
         if len(nodes) > 1:
@@ -92,8 +115,10 @@ def points_to_sticks(points, sticks_step=10, nodes_step='auto', fault_orientatio
     return sticks
 
 
-def find_stick_nodes(points, fault_orientation, stick_orientation, nodes_step='auto', threshold=5):
-    """ Get sticks from the line (with some width) defined by cloud of points
+def find_stick_nodes(
+    points, fault_orientation, stick_orientation, nodes_step="auto", threshold=5
+):
+    """Get sticks from the line (with some width) defined by cloud of points
 
     Parameters
     ----------
@@ -117,7 +142,7 @@ def find_stick_nodes(points, fault_orientation, stick_orientation, nodes_step='a
     if len(points) <= 2:
         return points
 
-    if nodes_step != 'auto':
+    if nodes_step != "auto":
         threshold = min(threshold, nodes_step // 2)
 
     normal = 3 - fault_orientation - stick_orientation
@@ -125,13 +150,17 @@ def find_stick_nodes(points, fault_orientation, stick_orientation, nodes_step='a
     mask = np.zeros(points.ptp(axis=0)[[normal, stick_orientation]] + 1)
     mask[
         points[:, normal] - points[:, normal].min(),
-        points[:, stick_orientation] - points[:, stick_orientation].min()
+        points[:, stick_orientation] - points[:, stick_orientation].min(),
     ] = 1
 
-    if nodes_step == 'auto':
+    if nodes_step == "auto":
         line_threshold = cv2.threshold(mask.astype(np.uint8) * 255, 127, 255, 0)[1]
-        line_contours = cv2.findContours(line_threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)[0]
-        nodes = np.unique(np.squeeze(np.concatenate(line_contours)), axis=0) #TODO: unique?
+        line_contours = cv2.findContours(
+            line_threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS
+        )[0]
+        nodes = np.unique(
+            np.squeeze(np.concatenate(line_contours)), axis=0
+        )  # TODO: unique?
         nodes[:, 0] = nodes[:, 0] + points[:, stick_orientation].min()
         nodes[:, 1] = nodes[:, 1] + points[:, normal].min()
     else:
@@ -148,32 +177,55 @@ def find_stick_nodes(points, fault_orientation, stick_orientation, nodes_step='a
 
     if threshold > 0:
         # Remove nodes which are too close
-        mask = np.concatenate([[True], np.abs(new_points[2:] - new_points[1:-1]).sum(axis=1) > threshold, [True]])
+        mask = np.concatenate(
+            [
+                [True],
+                np.abs(new_points[2:] - new_points[1:-1]).sum(axis=1) > threshold,
+                [True],
+            ]
+        )
         new_points = new_points[mask]
     return new_points
 
+
 @njit
 def node_deviation(start, end, point):
-    """ The distance (in 2D) between `point` and line from `start` to `end`. """
-    return np.abs(point[0] - (point[1] - start[1]) / (end[1] - start[1]) * (end[0] - start[0]) - start[0])
+    """The distance (in 2D) between `point` and line from `start` to `end`."""
+    return np.abs(
+        point[0]
+        - (point[1] - start[1]) / (end[1] - start[1]) * (end[0] - start[0])
+        - start[0]
+    )
+
 
 @njit
 def remove_redundant_nodes(nodes, threshold=1.5):
-    """ Remove unnecessary points from stick. """
+    """Remove unnecessary points from stick."""
     nodes_diff = np.ediff1d(nodes[:, 1])
-    pos = np.argmax(np.minimum(nodes_diff[:-1], nodes_diff[1:]), axis=0) + 1 # node farthest from neighbors
+    pos = (
+        np.argmax(np.minimum(nodes_diff[:-1], nodes_diff[1:]), axis=0) + 1
+    )  # node farthest from neighbors
     filtered_nodes = [pos]
     for direction in [-1, 1]:
         current_pos = pos
         pos_to_check = pos + direction
 
-        while (pos_to_check + direction < len(nodes)) and (pos_to_check + direction >= 0):
-            if node_deviation(nodes[current_pos], nodes[pos_to_check + direction], nodes[pos_to_check]) > threshold:
+        while (pos_to_check + direction < len(nodes)) and (
+            pos_to_check + direction >= 0
+        ):
+            if (
+                node_deviation(
+                    nodes[current_pos],
+                    nodes[pos_to_check + direction],
+                    nodes[pos_to_check],
+                )
+                > threshold
+            ):
                 filtered_nodes += [current_pos]
                 current_pos = pos_to_check
                 pos_to_check = current_pos + direction
             else:
                 pos_to_check += direction
 
-    filtered_nodes += [0, len(nodes)-1]
+    filtered_nodes += [0, len(nodes) - 1]
     return filtered_nodes

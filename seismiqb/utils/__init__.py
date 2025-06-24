@@ -1,4 +1,5 @@
-""" Utility functions and classes. """
+"""Utility functions and classes."""
+
 # pylint: disable=wildcard-import
 from .accumulator2d import *
 from .accumulator3d import *

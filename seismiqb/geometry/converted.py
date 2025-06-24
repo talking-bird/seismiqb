@@ -1,4 +1,4 @@
-""" Converted geometry: optimized storage. """
+"""Converted geometry: optimized storage."""
 
 import numpy as np
 import h5pickle as h5py
@@ -7,9 +7,8 @@ from .base import Geometry
 from ..utils import repack_hdf5
 
 
-
 class GeometryHDF5(Geometry):
-    """ Class to work with cubes in HDF5 format.
+    """Class to work with cubes in HDF5 format.
     We expect a certain structure to the file: mostly, this file should be created by :meth:`ConversionMixin.convert`.
 
     The file should contain data in one or more projections. When the data is requested, we choose the fastest one
@@ -20,11 +19,12 @@ class GeometryHDF5(Geometry):
 
     Refer to the documentation of the base class :class:`Geometry` for more information about attributes and parameters.
     """
+
     FILE_OPENER = h5py.File
 
     # open with read-write mode (file must exist) to avoid async open same file while `dump_meta`
-    def init(self, path, mode='r+', **kwargs):
-        """ Init for HDF5 geometry. The sequence of actions:
+    def init(self, path, mode="r+", **kwargs):
+        """Init for HDF5 geometry. The sequence of actions:
             - open file handler
             - check available projections in the file
             - add attributes from file: meta and info about shapes/dtypes.
@@ -36,9 +36,12 @@ class GeometryHDF5(Geometry):
         self.file = self.FILE_OPENER(path, mode, swmr=True)
 
         # Check available projections
-        self.available_axis = [axis for axis, name in self.PROJECTION_NAMES.items()
-                               if name in self.file]
-        self.available_names = [self.PROJECTION_NAMES[axis] for axis in self.available_axis]
+        self.available_axis = [
+            axis for axis, name in self.PROJECTION_NAMES.items() if name in self.file
+        ]
+        self.available_names = [
+            self.PROJECTION_NAMES[axis] for axis in self.available_axis
+        ]
 
         # Save projection handlers to instance
         self.axis_to_projection = {}
@@ -52,9 +55,9 @@ class GeometryHDF5(Geometry):
         self.add_attributes(**kwargs)
 
     def add_attributes(self, **kwargs):
-        """ Add attributes from the file. """
+        """Add attributes from the file."""
         # Innate attributes of converted geometry
-        self.index_headers = ('INLINE_3D', 'CROSSLINE_3D')
+        self.index_headers = ("INLINE_3D", "CROSSLINE_3D")
         self.index_length = 2
         self.converted = True
 
@@ -67,11 +70,16 @@ class GeometryHDF5(Geometry):
         *self.lengths, self.depth = shape
 
         self.dtype = projection.dtype
-        self.quantized = (projection.dtype == np.int8)
+        self.quantized = projection.dtype == np.int8
 
         # Get from meta / set defaults
-        required_attributes = self.PRESERVED + self.PRESERVED_LAZY + self.PRESERVED_LAZY_CACHED
-        meta_exists_and_has_attributes = self.meta_storage.exists and self.meta_storage.has_items(required_attributes)
+        required_attributes = (
+            self.PRESERVED + self.PRESERVED_LAZY + self.PRESERVED_LAZY_CACHED
+        )
+        meta_exists_and_has_attributes = (
+            self.meta_storage.exists
+            and self.meta_storage.has_items(required_attributes)
+        )
 
         if meta_exists_and_has_attributes:
             self.load_meta(keys=self.PRESERVED)
@@ -81,7 +89,7 @@ class GeometryHDF5(Geometry):
             self.has_stats = False
 
     def set_default_index_attributes(self, **kwargs):
-        """ Set default values for seismic attributes. """
+        """Set default values for seismic attributes."""
         self.n_traces = np.prod(self.shape[:2])
         self.delay, self.sample_interval, self.sample_rate = 0.0, 1.0, 1000
         self.compute_dead_traces()
@@ -89,7 +97,7 @@ class GeometryHDF5(Geometry):
             setattr(self, key, value)
 
     def compute_dead_traces(self, frequency=100):
-        """ Fallback for dead traces matrix computation, if no full stats are collected. """
+        """Fallback for dead traces matrix computation, if no full stats are collected."""
         slides = []
 
         for idx in range(0, self.depth, frequency):
@@ -103,7 +111,7 @@ class GeometryHDF5(Geometry):
 
     # General utilities
     def get_optimal_axis(self, locations=None, shape=None):
-        """ Choose the fastest axis from available projections, based on shape. """
+        """Choose the fastest axis from available projections, based on shape."""
         shape = shape or self.locations_to_shape(locations)
 
         for axis in np.argsort(shape):
@@ -111,21 +119,26 @@ class GeometryHDF5(Geometry):
                 return axis
         return None
 
-
     # Load data: 2D
     def load_slide_native(self, index, axis=0, limits=None, buffer=None, safe=False):
-        """ Load slide with public or private API of `h5py`. """
+        """Load slide with public or private API of `h5py`."""
         if safe or buffer is None or buffer.dtype != self.dtype:
-            buffer = self.load_slide_native_safe(index=index, axis=axis, limits=limits, buffer=buffer)
+            buffer = self.load_slide_native_safe(
+                index=index, axis=axis, limits=limits, buffer=buffer
+            )
         else:
-            self.load_slide_native_unsafe(index=index, axis=axis, limits=limits, buffer=buffer)
+            self.load_slide_native_unsafe(
+                index=index, axis=axis, limits=limits, buffer=buffer
+            )
         return buffer
 
     def load_slide_native_safe(self, index, axis=0, limits=None, buffer=None):
-        """ Load slide with public API of `h5py`. Requires an additional copy to put data into buffer. """
+        """Load slide with public API of `h5py`. Requires an additional copy to put data into buffer."""
         # Prepare locations
         loading_axis = axis if axis in self.available_axis else self.available_axis[0]
-        to_projection_transposition, from_projection_transposition = self.compute_axis_transpositions(loading_axis)
+        to_projection_transposition, from_projection_transposition = (
+            self.compute_axis_transpositions(loading_axis)
+        )
 
         locations = self.make_slide_locations(index=index, axis=axis)
         locations = [locations[idx] for idx in to_projection_transposition]
@@ -149,10 +162,12 @@ class GeometryHDF5(Geometry):
         return buffer
 
     def load_slide_native_unsafe(self, index, axis=0, limits=None, buffer=None):
-        """ Load slide with private API of `h5py`. Reads data directly into buffer. """
+        """Load slide with private API of `h5py`. Reads data directly into buffer."""
         # Prepare locations
         loading_axis = axis if axis in self.available_axis else self.available_axis[0]
-        to_projection_transposition, from_projection_transposition = self.compute_axis_transpositions(loading_axis)
+        to_projection_transposition, from_projection_transposition = (
+            self.compute_axis_transpositions(loading_axis)
+        )
 
         locations = self.make_slide_locations(index=index, axis=axis)
         locations = [locations[idx] for idx in to_projection_transposition]
@@ -173,24 +188,27 @@ class GeometryHDF5(Geometry):
         buffer = buffer.squeeze(axis)
         return buffer
 
-
     # Load data: 3D
     def load_crop_native(self, locations, axis=None, buffer=None, safe=False):
-        """ Load crop with public or private API of `h5py`. """
+        """Load crop with public or private API of `h5py`."""
         axis = axis or self.get_optimal_axis(locations=locations)
         if axis not in self.available_axis:
-            raise ValueError(f'Axis={axis} is not available!')
+            raise ValueError(f"Axis={axis} is not available!")
 
         if safe or axis == 2 or buffer is None or buffer.dtype != self.dtype:
-            buffer = self.load_crop_native_safe(locations=locations, axis=axis, buffer=buffer)
+            buffer = self.load_crop_native_safe(
+                locations=locations, axis=axis, buffer=buffer
+            )
         else:
             self.load_crop_native_unsafe(locations=locations, axis=axis, buffer=buffer)
         return buffer
 
     def load_crop_native_safe(self, locations, axis=None, buffer=None):
-        """ Load slide with public API of `h5py`. Requires an additional copy to put data into buffer. """
+        """Load slide with public API of `h5py`. Requires an additional copy to put data into buffer."""
         # Prepare locations
-        to_projection_transposition, from_projection_transposition = self.compute_axis_transpositions(axis)
+        to_projection_transposition, from_projection_transposition = (
+            self.compute_axis_transpositions(axis)
+        )
 
         locations = [locations[idx] for idx in to_projection_transposition]
         locations = tuple(locations)
@@ -209,9 +227,11 @@ class GeometryHDF5(Geometry):
         return buffer
 
     def load_crop_native_unsafe(self, locations, axis=None, buffer=None):
-        """ Load slide with private API of `h5py`. Reads data directly into buffer. """
+        """Load slide with private API of `h5py`. Reads data directly into buffer."""
         # Prepare locations
-        to_projection_transposition, from_projection_transposition = self.compute_axis_transpositions(axis)
+        to_projection_transposition, from_projection_transposition = (
+            self.compute_axis_transpositions(axis)
+        )
         locations = [locations[idx] for idx in to_projection_transposition]
         locations = tuple(locations)
 
@@ -225,8 +245,24 @@ class GeometryHDF5(Geometry):
         buffer = buffer.transpose(from_projection_transposition)
         return buffer
 
-    def repack_hdf5(self, dst_path=None, projections = (0, ), transform=None, dtype='float32', pbar='t', inplace=False,
-                    **dataset_kwargs):
-        """ Recreate hdf5 file with conversion and compression. """
-        repack_hdf5(self.path, dst_path=dst_path, projections=projections, transform=transform, dtype=dtype, pbar=pbar,
-                    inplace=inplace, **dataset_kwargs)
+    def repack_hdf5(
+        self,
+        dst_path=None,
+        projections=(0,),
+        transform=None,
+        dtype="float32",
+        pbar="t",
+        inplace=False,
+        **dataset_kwargs,
+    ):
+        """Recreate hdf5 file with conversion and compression."""
+        repack_hdf5(
+            self.path,
+            dst_path=dst_path,
+            projections=projections,
+            transform=transform,
+            dtype=dtype,
+            pbar=pbar,
+            inplace=inplace,
+            **dataset_kwargs,
+        )

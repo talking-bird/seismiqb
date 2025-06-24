@@ -1,5 +1,6 @@
-""" A mixin with field visualizations. """
-#pylint: disable=global-variable-undefined, too-many-statements
+"""A mixin with field visualizations."""
+
+# pylint: disable=global-variable-undefined, too-many-statements
 import re
 from copy import copy
 from collections import defaultdict
@@ -8,7 +9,11 @@ from itertools import cycle
 import numpy as np
 from batchflow.plotter.plot import Subplot
 
-from ..functional import compute_instantaneous_amplitude, compute_instantaneous_phase, compute_instantaneous_frequency
+from ..functional import (
+    compute_instantaneous_amplitude,
+    compute_instantaneous_phase,
+    compute_instantaneous_frequency,
+)
 from ..utils import DelegatingList, to_list
 from ..plotters import plot, show_3d
 from ..labels.horizon.attributes import AttributesMixin
@@ -17,9 +22,9 @@ COLOR_GENERATOR = iter(Subplot.MASK_COLORS)
 NAME_TO_COLOR = {}
 
 
-
 class VisualizationMixin:
-    """ Methods for field visualization: textual, 2d along various axis, 2d interactive, 3d. """
+    """Methods for field visualization: textual, 2d along various axis, 2d interactive, 3d."""
+
     # Textual representation
     def __repr__(self):
         return f"""<Field `{self.short_name}` at {hex(id(self))}>"""
@@ -28,48 +33,54 @@ class VisualizationMixin:
     REPR_MAX_ROWS = 5
 
     def __str__(self):
-        processed_prefix = 'un' if self.geometry.has_stats is False else ''
-        labels_prefix = ' and labels:' if self.labels else ''
-        msg = f'Field `{self.short_name}` with {processed_prefix}processed geometry{labels_prefix}\n'
+        processed_prefix = "un" if self.geometry.has_stats is False else ""
+        labels_prefix = " and labels:" if self.labels else ""
+        msg = f"Field `{self.short_name}` with {processed_prefix}processed geometry{labels_prefix}\n"
 
         for label_src in self.loaded_labels:
             labels = getattr(self, label_src)
             names = [label.short_name for label in labels]
 
-            labels_msg = ''
-            line = f'    - {label_src}: ['
+            labels_msg = ""
+            line = f"    - {label_src}: ["
             while names:
                 line += names.pop(0)
 
                 if names:
-                    line += ', '
+                    line += ", "
                 else:
                     labels_msg += line
                     break
 
                 if len(line) > self.REPR_MAX_LEN:
                     labels_msg += line
-                    line = '\n         ' + ' ' * len(label_src)
+                    line = "\n         " + " " * len(label_src)
 
                 if len(labels_msg) > self.REPR_MAX_LEN * self.REPR_MAX_ROWS:
                     break
 
             if names:
-                labels_msg += f'\n         {" "*len(label_src)}and {len(names)} more item(s)'
-            labels_msg += ']\n'
+                labels_msg += (
+                    f"\n         {' ' * len(label_src)}and {len(names)} more item(s)"
+                )
+            labels_msg += "]\n"
             msg += labels_msg
         return msg[:-1]
 
     # 2D along axis
     ATTRIBUTE_TO_ALIASES = {
-        compute_instantaneous_amplitude: ['iamplitudes', 'instantaneous_amplitudes'],
-        compute_instantaneous_phase: ['iphases', 'instantaneous_phases'],
-        compute_instantaneous_frequency: ['ifrequencies', 'instantaneous_frequencies'],
+        compute_instantaneous_amplitude: ["iamplitudes", "instantaneous_amplitudes"],
+        compute_instantaneous_phase: ["iphases", "instantaneous_phases"],
+        compute_instantaneous_frequency: ["ifrequencies", "instantaneous_frequencies"],
     }
-    ALIASES_TO_ATTRIBUTE = {alias: name for name, aliases in ATTRIBUTE_TO_ALIASES.items() for alias in aliases}
+    ALIASES_TO_ATTRIBUTE = {
+        alias: name
+        for name, aliases in ATTRIBUTE_TO_ALIASES.items()
+        for alias in aliases
+    }
 
-    def load_slide(self, index, axis=0, attribute=None, src_geometry='geometry'):
-        """ Load one slide of data along specified axis and apply `transform`.
+    def load_slide(self, index, axis=0, attribute=None, src_geometry="geometry"):
+        """Load one slide of data along specified axis and apply `transform`.
         Refer to the documentation of :meth:`.Geometry.load_slide` for details.
 
         Parameters
@@ -92,14 +103,25 @@ class VisualizationMixin:
             if callable(attribute):
                 slide = attribute(slide)
             else:
-                raise ValueError(f'Unknown transform={attribute}')
+                raise ValueError(f"Unknown transform={attribute}")
         return slide
 
-
-    def show_slide(self, index, axis='i', attribute=None, zoom=None, width=9,
-                   src_geometry='geometry', src_labels='labels',
-                   enumerate_labels=False, indices='all', augment_mask=True, plotter=plot, **kwargs):
-        """ Show slide with horizon on it.
+    def show_slide(
+        self,
+        index,
+        axis="i",
+        attribute=None,
+        zoom=None,
+        width=9,
+        src_geometry="geometry",
+        src_labels="labels",
+        enumerate_labels=False,
+        indices="all",
+        augment_mask=True,
+        plotter=plot,
+        **kwargs,
+    ):
+        """Show slide with horizon on it.
 
         Parameters
         ----------
@@ -124,19 +146,31 @@ class VisualizationMixin:
         locations = self.geometry.make_slide_locations(index, axis=axis)
 
         # Load seismic and mask
-        seismic_slide = self.load_slide(index=index, axis=axis, attribute=attribute, src_geometry=src_geometry)
+        seismic_slide = self.load_slide(
+            index=index, axis=axis, attribute=attribute, src_geometry=src_geometry
+        )
 
-        src_labels = src_labels if isinstance(src_labels, (tuple, list)) else [src_labels]
+        src_labels = (
+            src_labels if isinstance(src_labels, (tuple, list)) else [src_labels]
+        )
         masks = []
         for src in src_labels:
-            masks.append(self.make_mask(locations=locations, orientation=axis, src=src, width=width,
-                                        indices=indices, enumerate_labels=enumerate_labels))
+            masks.append(
+                self.make_mask(
+                    locations=locations,
+                    orientation=axis,
+                    src=src,
+                    width=width,
+                    indices=indices,
+                    enumerate_labels=enumerate_labels,
+                )
+            )
         mask = sum(masks)
 
         seismic_slide, mask = np.squeeze(seismic_slide), np.squeeze(mask)
         xmin, xmax, ymin, ymax = 0, seismic_slide.shape[0], seismic_slide.shape[1], 0
 
-        if zoom == 'auto':
+        if zoom == "auto":
             zoom = self.geometry.compute_auto_zoom(index, axis)
         if zoom:
             seismic_slide = seismic_slide[zoom]
@@ -152,33 +186,41 @@ class VisualizationMixin:
 
         if axis in [0, 1]:
             xlabel = self.geometry.index_headers[1 - axis]
-            ylabel = 'DEPTH'
+            ylabel = "DEPTH"
         if axis == 2:
             xlabel = self.geometry.index_headers[0]
             ylabel = self.geometry.index_headers[1]
             total = self.geometry.depth
 
         kwargs = {
-            'cmap': ['Greys_r', 'darkorange'],
-            'title': f'{header} {index} out of {total}',
-            'suptitle':  f'Field `{self.short_name}`',
-            'xlabel': xlabel,
-            'ylabel': ylabel,
-            'extent': (xmin, xmax, ymin, ymax),
-            'legend': ', '.join(src_labels),
-            'labeltop': False,
-            'labelright': False,
-            'curve_width': width,
-            'grid': [None, 'both'],
-            'colorbar': [True, None],
-            'augment_mask': augment_mask,
-            **kwargs
+            "cmap": ["Greys_r", "darkorange"],
+            "title": f"{header} {index} out of {total}",
+            "suptitle": f"Field `{self.short_name}`",
+            "xlabel": xlabel,
+            "ylabel": ylabel,
+            "extent": (xmin, xmax, ymin, ymax),
+            "legend": ", ".join(src_labels),
+            "labeltop": False,
+            "labelright": False,
+            "curve_width": width,
+            "grid": [None, "both"],
+            "colorbar": [True, None],
+            "augment_mask": augment_mask,
+            **kwargs,
         }
 
         return plotter(data=[seismic_slide, mask], **kwargs)
 
-    def show_section(self, locations, zoom=None, plotter=plot, linecolor='gray', linewidth=3, **kwargs):
-        """ Show seismic section via desired traces.
+    def show_section(
+        self,
+        locations,
+        zoom=None,
+        plotter=plot,
+        linecolor="gray",
+        linewidth=3,
+        **kwargs,
+    ):
+        """Show seismic section via desired traces.
         Under the hood relies on :meth:`load_section`, so works with geometries in any formats.
 
         Parameters
@@ -196,12 +238,18 @@ class VisualizationMixin:
         linewidth : int
             With of the line.
         """
-        self.geometry.show_section(locations, zoom=zoom, plotter=plotter, linecolor=linecolor,
-                                   linewidth=linewidth, **kwargs)
+        self.geometry.show_section(
+            locations,
+            zoom=zoom,
+            plotter=plotter,
+            linecolor=linecolor,
+            linewidth=linewidth,
+            **kwargs,
+        )
 
     # 2D depth slice
-    def show_points(self, src='labels', plotter=plot, **kwargs):
-        """ Plot 2D map of labels points. Meant to be used with spatially disjoint objects (e.g. faults). """
+    def show_points(self, src="labels", plotter=plot, **kwargs):
+        """Plot 2D map of labels points. Meant to be used with spatially disjoint objects (e.g. faults)."""
         map_ = np.zeros(self.spatial_shape)
         denum = np.zeros(self.spatial_shape)
 
@@ -214,21 +262,30 @@ class VisualizationMixin:
 
         labels_class = type(getattr(self, src)[0]).__name__
         kwargs = {
-            'title': f'{labels_class}s on `{self.short_name}`',
-            'xlabel': self.index_headers[0],
-            'ylabel': self.index_headers[1],
-            'cmap': ['Reds', 'black'],
-            'colorbar': True,
-            'augment_mask': True,
-            **kwargs
+            "title": f"{labels_class}s on `{self.short_name}`",
+            "xlabel": self.index_headers[0],
+            "ylabel": self.index_headers[1],
+            "cmap": ["Reds", "black"],
+            "colorbar": True,
+            "augment_mask": True,
+            **kwargs,
         }
         return plotter([map_, self.dead_traces_matrix], **kwargs)
 
-
     # 2D top-view maps
-    def show(self, attributes='snr', mode='image', title_pattern='{attributes} of {label_name}',
-             bbox=False, savepath=None, load_kwargs=None, show=True, plotter=plot, **kwargs):
-        """ Show one or more field attributes on one figure.
+    def show(
+        self,
+        attributes="snr",
+        mode="image",
+        title_pattern="{attributes} of {label_name}",
+        bbox=False,
+        savepath=None,
+        load_kwargs=None,
+        show=True,
+        plotter=plot,
+        **kwargs,
+    ):
+        """Show one or more field attributes on one figure.
 
         Parameters
         ----------
@@ -291,13 +348,17 @@ class VisualizationMixin:
         """
         # Wrap given attributes load parameters in a structure that allows applying functions to its nested items
         load_params = DelegatingList(attributes)
-        load_params = load_params.map(lambda item: copy(item) if isinstance(item, dict) else item)
+        load_params = load_params.map(
+            lambda item: copy(item) if isinstance(item, dict) else item
+        )
 
         # Prepare data loading params
         load_params = load_params.map(self._make_load_params, common_params=load_kwargs)
 
         # Extract names of labels sources that require wildcard loading
-        detect_wildcard = lambda params: params['src_labels'] if params['label_num'] == '*' else []
+        detect_wildcard = lambda params: (
+            params["src_labels"] if params["label_num"] == "*" else []
+        )
         labels_require_wildcard_loading = load_params.map(detect_wildcard).flat
 
         # If any attributes require wildcard loading, run `show` for every label item
@@ -307,12 +368,24 @@ class VisualizationMixin:
             reference_labels_source = labels_require_wildcard_loading[0]
             n_items = len(getattr(self, reference_labels_source))
             for label_num in range(n_items):
-                #pylint: disable=cell-var-from-loop
-                substitutor = lambda params: {**params, 'src': params['src'].replace('*', str(label_num))}
+                # pylint: disable=cell-var-from-loop
+                substitutor = lambda params: {
+                    **params,
+                    "src": params["src"].replace("*", str(label_num)),
+                }
                 label_attributes = load_params.map(substitutor)
 
-                plotter_ = self.show(attributes=label_attributes, mode=mode, bbox=bbox, title_pattern=title_pattern,
-                                     savepath=savepath, load_kwargs=load_kwargs, show=show, plotter=plotter, **kwargs)
+                plotter_ = self.show(
+                    attributes=label_attributes,
+                    mode=mode,
+                    bbox=bbox,
+                    title_pattern=title_pattern,
+                    savepath=savepath,
+                    load_kwargs=load_kwargs,
+                    show=show,
+                    plotter=plotter,
+                    **kwargs,
+                )
                 plotters.append(plotter_)
 
             return plotters
@@ -324,28 +397,36 @@ class VisualizationMixin:
         plot_config = {**plot_config, **kwargs}
 
         plot_config = {
-            'suptitle': f'Field `{self.short_name}`',
-            'augment_mask': True,
-            **plot_config
+            "suptitle": f"Field `{self.short_name}`",
+            "augment_mask": True,
+            **plot_config,
         }
 
-        if mode == 'image':
-            plot_config['colorbar'] = True
-            plot_config['xlabel'] = self.index_headers[0]
-            plot_config['ylabel'] = self.index_headers[1]
+        if mode == "image":
+            plot_config["colorbar"] = True
+            plot_config["xlabel"] = self.index_headers[0]
+            plot_config["ylabel"] = self.index_headers[1]
 
-        if title_pattern and 'title' not in plot_config:
-            plot_config['title'] = data_params.map(self._make_title, shallow=True, title_pattern=title_pattern)
+        if title_pattern and "title" not in plot_config:
+            plot_config["title"] = data_params.map(
+                self._make_title, shallow=True, title_pattern=title_pattern
+            )
 
         if bbox:
-            bboxes_list = data_params.map(lambda params: params['bbox'])
-            lims_list = [np.stack([bboxes]).transpose(1, 2, 0) for bboxes in bboxes_list]
-            plot_config['xlim'] = [(lims[0, 0].min(), lims[0, 1].max()) for lims in lims_list]
-            plot_config['ylim'] = [(lims[1, 1].max(), lims[1, 0].min()) for lims in lims_list]
+            bboxes_list = data_params.map(lambda params: params["bbox"])
+            lims_list = [
+                np.stack([bboxes]).transpose(1, 2, 0) for bboxes in bboxes_list
+            ]
+            plot_config["xlim"] = [
+                (lims[0, 0].min(), lims[0, 1].max()) for lims in lims_list
+            ]
+            plot_config["ylim"] = [
+                (lims[1, 1].max(), lims[1, 0].min()) for lims in lims_list
+            ]
 
         if savepath:
-            first_label_name = data_params.reference_object['label_name']
-            plot_config['savepath'] = self.make_path(savepath, name=first_label_name)
+            first_label_name = data_params.reference_object["label_name"]
+            plot_config["savepath"] = self.make_path(savepath, name=first_label_name)
 
         # Plot image with given params and return resulting figure
         plotter_ = plotter(mode=mode, show=show, **plot_config)
@@ -358,32 +439,44 @@ class VisualizationMixin:
     def _make_load_params(self, attribute, common_params):
         # Transform load parameters into dict if needed, extract string indicating data source to use
         if isinstance(attribute, str):
-            params = {'src': attribute}
+            params = {"src": attribute}
         elif isinstance(attribute, np.ndarray):
-            params = {'src': 'user data', 'data': attribute}
+            params = {"src": "user data", "data": attribute}
         elif isinstance(attribute, dict):
             params = copy(attribute)
         else:
-            raise TypeError(f'Attribute should be either str, dict or array! Got {type(attribute)} instead.')
+            raise TypeError(
+                f"Attribute should be either str, dict or array! Got {type(attribute)} instead."
+            )
 
         # Extract source labels names and attribute names, detect if any labels sources require wildcard loading,
         # i.e. loading of data for every label stored in requested attribute (e.g. 'horizons:*/depths')
-        attribute_name, label_num, src_labels = (re.split(':([0-9, *]+)/', params['src'])[::-1] + ['', 'geometry'])[:3]
-        params['attribute_name'] = self.ALIAS_TO_ATTRIBUTE.get(attribute_name, attribute_name)
-        params['src_labels'] = src_labels
-        params['label_num'] = label_num
+        attribute_name, label_num, src_labels = (
+            re.split(":([0-9, *]+)/", params["src"])[::-1] + ["", "geometry"]
+        )[:3]
+        params["attribute_name"] = self.ALIAS_TO_ATTRIBUTE.get(
+            attribute_name, attribute_name
+        )
+        params["src_labels"] = src_labels
+        params["label_num"] = label_num
 
         # Make data loading defaults
-        default_params = {'dtype': np.float32}
+        default_params = {"dtype": np.float32}
 
-        if params['attribute_name'] in ['instantaneous_amplitudes', 'instantaneous_phases']:
-            default_params['channels'] = 'middle'
+        if params["attribute_name"] in [
+            "instantaneous_amplitudes",
+            "instantaneous_phases",
+        ]:
+            default_params["channels"] = "middle"
 
-        if params['attribute_name'] in ['fourier_decomposition', 'wavelet_decomposition']:
-            default_params['n_components'] = 1
+        if params["attribute_name"] in [
+            "fourier_decomposition",
+            "wavelet_decomposition",
+        ]:
+            default_params["n_components"] = 1
 
-        if attribute_name in ['mask', 'full_binary_matrix']:
-            params['fill_value'] = 0
+        if attribute_name in ["mask", "full_binary_matrix"]:
+            params["fill_value"] = 0
 
         # Merge defaults with provided parameters
         params = {**default_params, **(common_params or {}), **params}
@@ -391,62 +484,67 @@ class VisualizationMixin:
         return params
 
     def _load_data(self, load_params):
-        params = {'attribute_name': load_params.pop('attribute_name'),
-                  'src_labels': load_params.pop('src_labels'),
-                  'label_num': load_params.pop('label_num')}
+        params = {
+            "attribute_name": load_params.pop("attribute_name"),
+            "src_labels": load_params.pop("src_labels"),
+            "label_num": load_params.pop("label_num"),
+        }
 
-        postprocess = load_params.pop('postprocess', lambda x: x)
+        postprocess = load_params.pop("postprocess", lambda x: x)
 
-        if 'data' not in load_params:
+        if "data" not in load_params:
             data, label = self.load_attribute(_return_label=True, **load_params)
-            params['label_name'] = label.short_name
-            params['bbox'] = label.bbox[:2]
+            params["label_name"] = label.short_name
+            params["bbox"] = label.bbox[:2]
         else:
-            data = load_params['data']
-            params['label_name'] = self.short_name
-            params['bbox'] = np.array([[0, max] for max in data.shape])
+            data = load_params["data"]
+            params["label_name"] = self.short_name
+            params["bbox"] = np.array([[0, max] for max in data.shape])
 
-        params['data'] = postprocess(data.squeeze())
+        params["data"] = postprocess(data.squeeze())
 
         return params
 
     CMAP_TO_ATTRIBUTE = {
-        'Depths': ['full_matrix'],
-        'Reds': ['spikes', 'quality_map', 'quality_grid'],
-        'Metric': ['metric'],
-        'RdYlGn': ['probabilities']
+        "Depths": ["full_matrix"],
+        "Reds": ["spikes", "quality_map", "quality_grid"],
+        "Metric": ["metric"],
+        "RdYlGn": ["probabilities"],
     }
-    ATTRIBUTE_TO_CMAP = {attr: cmap for cmap, attributes in CMAP_TO_ATTRIBUTE.items()
-                         for attr in attributes}
+    ATTRIBUTE_TO_CMAP = {
+        attr: cmap
+        for cmap, attributes in CMAP_TO_ATTRIBUTE.items()
+        for attr in attributes
+    }
 
     def _make_plot_config(self, data_params, mode):
-        params = {'data': data_params['data']}
+        params = {"data": data_params["data"]}
 
-        src_labels = data_params['src_labels']
-        attribute_name = data_params['attribute_name']
+        src_labels = data_params["src_labels"]
+        attribute_name = data_params["attribute_name"]
 
         # Choose default cmap
-        if attribute_name == 'full_binary_matrix' or mode == 'histogram':
+        if attribute_name == "full_binary_matrix" or mode == "histogram":
             global_name = f"{src_labels}/{attribute_name}"
             if global_name not in NAME_TO_COLOR:
                 NAME_TO_COLOR[global_name] = next(COLOR_GENERATOR)
             cmap = NAME_TO_COLOR[global_name]
         else:
-            cmap = self.ATTRIBUTE_TO_CMAP.get(attribute_name, 'Seismic')
+            cmap = self.ATTRIBUTE_TO_CMAP.get(attribute_name, "Seismic")
 
-        params['cmap'] = cmap
+        params["cmap"] = cmap
 
         # Choose default alpha
-        if attribute_name in ['full_binary_matrix']:
+        if attribute_name in ["full_binary_matrix"]:
             alpha = 0.7
         else:
             alpha = 1.0
 
         # Bounds for metrics
-        if 'metric' in attribute_name:
-            params['vmin'], params['vmax'] = -1.0, 1.0
+        if "metric" in attribute_name:
+            params["vmin"], params["vmax"] = -1.0, 1.0
 
-        params['alpha'] = alpha
+        params["alpha"] = alpha
 
         return params
 
@@ -456,36 +554,49 @@ class VisualizationMixin:
         for params in to_list(data_params):
             if isinstance(params, list):
                 params = params[0]
-            src_label = params['src_labels']
-            if params['label_num']:
-                src_label += ':' + params['label_num']
-            label_name = params['label_name']
+            src_label = params["src_labels"]
+            if params["label_num"]:
+                src_label += ":" + params["label_num"]
+            label_name = params["label_name"]
 
-            linkage[(src_label, label_name)].append(params['attribute_name'])
+            linkage[(src_label, label_name)].append(params["attribute_name"])
 
-        title = ''
+        title = ""
         for (src_label, label_name), attributes in linkage.items():
-            title += '\n' * (title != '')
+            title += "\n" * (title != "")
             part = title_pattern
-            part = part.replace('{src_label}', src_label)
-            part = part.replace('{label_name}', label_name)
-            part = part.replace('{attributes}', ','.join(attributes))
+            part = part.replace("{src_label}", src_label)
+            part = part.replace("{label_name}", label_name)
+            part = part.replace("{attributes}", ",".join(attributes))
             title += part
 
         return title
 
     # 2D interactive
     def viewer(self, figsize=(8, 8), **kwargs):
-        """ Interactive field viewer. """
-        from .viewer import FieldViewer #pylint: disable=import-outside-toplevel
+        """Interactive field viewer."""
+        from .viewer import FieldViewer  # pylint: disable=import-outside-toplevel
+
         return FieldViewer(field=self, figsize=figsize, **kwargs)
 
-
     # 3D interactive
-    def show_3d(self, src='labels', aspect_ratio=None, zoom=None, n_points=100, threshold=100,
-                sticks_step=None, stick_nodes_step=None, sticks=False, stick_orientation=None,
-                slides=None, margin=(0, 0, 20), colors=None, **kwargs):
-        """ Interactive 3D plot for some elements of a field.
+    def show_3d(
+        self,
+        src="labels",
+        aspect_ratio=None,
+        zoom=None,
+        n_points=100,
+        threshold=100,
+        sticks_step=None,
+        stick_nodes_step=None,
+        sticks=False,
+        stick_orientation=None,
+        slides=None,
+        margin=(0, 0, 20),
+        colors=None,
+        **kwargs,
+    ):
+        """Interactive 3D plot for some elements of a field.
         Roughly, does the following:
             - take some faults and/or horizons
             - select `n` points to represent the horizon surface and `sticks_step` and `stick_nodes_step` for each fault
@@ -541,24 +652,32 @@ class VisualizationMixin:
             zoom = [slice(0, s) for s in self.shape]
         else:
             zoom = [
-                slice(item.start or 0, item.stop or stop) for item, stop in zip(zoom, self.shape)
+                slice(item.start or 0, item.stop or stop)
+                for item, stop in zip(zoom, self.shape)
             ]
         zoom = tuple(zoom)
         triangulation_kwargs = {
-            'n_points': n_points,
-            'threshold': threshold,
-            'sticks_step': sticks_step,
-            'stick_nodes_step': stick_nodes_step,
-            'slices': zoom,
-            'sticks': sticks,
-            'stick_orientation': stick_orientation
+            "n_points": n_points,
+            "threshold": threshold,
+            "sticks_step": sticks_step,
+            "stick_nodes_step": stick_nodes_step,
+            "slices": zoom,
+            "sticks": sticks,
+            "stick_orientation": stick_orientation,
         }
 
-        labels = [getattr(self, src_) if isinstance(src_, str) else [src_] for src_ in src]
+        labels = [
+            getattr(self, src_) if isinstance(src_, str) else [src_] for src_ in src
+        ]
         labels = sum(labels, [])
 
-        if colors == 'random':
-            colors = ['rgb(' + ', '.join([str(c) for c in np.random.randint(0, 255, size=3)]) + ')' for _ in labels]
+        if colors == "random":
+            colors = [
+                "rgb("
+                + ", ".join([str(c) for c in np.random.randint(0, 255, size=3)])
+                + ")"
+                for _ in labels
+            ]
         if isinstance(colors, str):
             colors = [colors]
         if isinstance(colors, list):
@@ -566,9 +685,12 @@ class VisualizationMixin:
             colors = [next(cycled_colors) for _ in range(len(labels))]
 
         if colors is None:
-            colors = ['green' for _ in labels]
+            colors = ["green" for _ in labels]
         if isinstance(colors, dict):
-            colors = [colors.get(type(label).__name__, colors.get('all', 'green')) for label in labels]
+            colors = [
+                colors.get(type(label).__name__, colors.get("all", "green"))
+                for label in labels
+            ]
 
         simplices_colors = []
         for label, color in zip(labels, colors):
@@ -593,9 +715,11 @@ class VisualizationMixin:
 
         default_aspect_ratio = (self.shape[0] / self.shape[1], 1, 1)
         aspect_ratio = [None] * 3 if aspect_ratio is None else aspect_ratio
-        aspect_ratio = [item or default for item, default in zip(aspect_ratio, default_aspect_ratio)]
+        aspect_ratio = [
+            item or default for item, default in zip(aspect_ratio, default_aspect_ratio)
+        ]
 
-        axis_labels = (self.index_headers[0], self.index_headers[1], 'DEPTH')
+        axis_labels = (self.index_headers[0], self.index_headers[1], "DEPTH")
 
         images = []
         if slides is not None:
@@ -609,5 +733,17 @@ class VisualizationMixin:
                     image = image[zoom[:-1]]
                 images += [(image, loc, axis)]
 
-        show_3d(coords[:, 0], coords[:, 1], coords[:, 2], simplices, title, zoom, simplices_colors, margin=margin,
-                aspect_ratio=aspect_ratio, axis_labels=axis_labels, images=images, **kwargs)
+        show_3d(
+            coords[:, 0],
+            coords[:, 1],
+            coords[:, 2],
+            simplices,
+            title,
+            zoom,
+            simplices_colors,
+            margin=margin,
+            aspect_ratio=aspect_ratio,
+            axis_labels=axis_labels,
+            images=images,
+            **kwargs,
+        )

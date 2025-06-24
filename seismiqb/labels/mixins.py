@@ -1,13 +1,15 @@
-""" Common labels mixins. """
+"""Common labels mixins."""
 
 import numpy as np
 
 from ..plotters import plot
 
+
 class VisualizationMixin:
-    """ Visualization utilities. """
+    """Visualization utilities."""
+
     def load_slide(self, index, axis=0, width=3):
-        """ Create a mask at desired location along supplied axis. """
+        """Create a mask at desired location along supplied axis."""
         axis = self.field.geometry.parse_axis(axis)
         locations = self.field.geometry.make_slide_locations(index, axis=axis)
         shape = self.field.geometry.locations_to_shape(locations)
@@ -17,8 +19,10 @@ class VisualizationMixin:
         mask = self.add_to_mask(mask, locations=locations, width=width)
         return np.squeeze(mask)
 
-    def show_slide(self, index, width=None, axis='i', zoom=None, plotter=plot, **kwargs):
-        """ Show slide with horizon on it.
+    def show_slide(
+        self, index, width=None, axis="i", zoom=None, plotter=plot, **kwargs
+    ):
+        """Show slide with horizon on it.
 
         Parameters
         ----------
@@ -48,7 +52,7 @@ class VisualizationMixin:
         seismic_slide, mask = np.squeeze(seismic_slide), np.squeeze(mask)
         xmin, xmax, ymin, ymax = 0, seismic_slide.shape[0], seismic_slide.shape[1], 0
 
-        if zoom == 'auto':
+        if zoom == "auto":
             zoom = self.compute_auto_zoom(index, axis)
 
         if zoom is not None:
@@ -65,28 +69,30 @@ class VisualizationMixin:
 
         if axis in [0, 1]:
             xlabel = self.field.index_headers[1 - axis]
-            ylabel = 'DEPTH'
+            ylabel = "DEPTH"
         if axis == 2:
             xlabel = self.field.index_headers[0]
             ylabel = self.field.index_headers[1]
             total = self.field.depth
 
-        title = f'{self.__class__.__name__} `{self.name}` on cube'\
-                f'`{self.field.short_name}`\n {header} {index} out of {total}'
+        title = (
+            f"{self.__class__.__name__} `{self.name}` on cube"
+            f"`{self.field.short_name}`\n {header} {index} out of {total}"
+        )
 
         kwargs = {
-            'cmap': ['Greys_r', 'darkorange'],
-            'title': title,
-            'xlabel': xlabel,
-            'ylabel': ylabel,
-            'extent': (xmin, xmax, ymin, ymax),
-            'legend': False,
-            'labeltop': False,
-            'labelright': False,
-            'curve_width': width,
-            'grid': [False, True],
-            'colorbar': [True, False],
-            'augment_mask': [False, True],
-            **kwargs
+            "cmap": ["Greys_r", "darkorange"],
+            "title": title,
+            "xlabel": xlabel,
+            "ylabel": ylabel,
+            "extent": (xmin, xmax, ymin, ymax),
+            "legend": False,
+            "labeltop": False,
+            "labelright": False,
+            "curve_width": width,
+            "grid": [False, True],
+            "colorbar": [True, False],
+            "augment_mask": [False, True],
+            **kwargs,
         }
         return plotter(data=[seismic_slide, mask], **kwargs)

@@ -1,8 +1,10 @@
-""" Accumulator for 2d matrices. """
+"""Accumulator for 2d matrices."""
+
 import numpy as np
 
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     cp = np
@@ -10,9 +12,8 @@ except ImportError:
 from .classes import augmented_np
 
 
-
 class Accumulator:
-    """ Class to accumulate statistics over streamed matrices.
+    """Class to accumulate statistics over streamed matrices.
     An example of usage:
         one can either store matrices and take a mean along desired axis at the end of their generation,
         or sequentially update the `mean` matrix with the new data by using this class.
@@ -50,8 +51,9 @@ class Accumulator:
     axis : int
         Axis to stack matrices on and to apply aggregation funcitons.
     """
-    #pylint: disable=attribute-defined-outside-init
-    def __init__(self, agg='mean', amortize=False, total=None, axis=0):
+
+    # pylint: disable=attribute-defined-outside-init
+    def __init__(self, agg="mean", amortize=False, total=None, axis=0):
         self.agg = agg
         self.amortize = amortize
         self.total = total
@@ -59,14 +61,13 @@ class Accumulator:
 
         self.initialized = False
 
-
     def init(self, matrix):
-        """ Initialize all the containers on first `update`. """
+        """Initialize all the containers on first `update`."""
         # No amortization: collect all the matrices and apply reduce afterwards
         self.module = cp.get_array_module(matrix) if CUPY_AVAILABLE else augmented_np
         self.n = 1
 
-        if self.amortize is False or self.agg in ['stack', 'mode']:
+        if self.amortize is False or self.agg in ["stack", "mode"]:
             if self.total:
                 self.values = self.module.empty((self.total, *matrix.shape))
                 self.values[0, ...] = matrix
@@ -77,21 +78,21 @@ class Accumulator:
             return
 
         # Amortization: init all the containers
-        if self.agg in ['mean', 'nanmean']:
+        if self.agg in ["mean", "nanmean"]:
             # Sum of values and counts of non-nan
             self.value = matrix
             self.counts = (~self.module.isnan(matrix)).astype(self.module.int32)
 
-        elif self.agg in ['min', 'nanmin', 'max', 'nanmax']:
+        elif self.agg in ["min", "nanmin", "max", "nanmax"]:
             self.value = matrix
 
-        elif self.agg in ['std', 'nanstd']:
+        elif self.agg in ["std", "nanstd"]:
             # Same as means, but need to keep track of mean of squares and squared mean
             self.means = matrix
-            self.squared_means = matrix ** 2
+            self.squared_means = matrix**2
             self.counts = (~self.module.isnan(matrix)).astype(self.module.int32)
 
-        elif self.agg in ['argmin', 'argmax', 'nanargmin', 'nanargmax']:
+        elif self.agg in ["argmin", "argmax", "nanargmin", "nanargmax"]:
             # Keep the current maximum/minimum and update indices matrix, if needed
             self.value = matrix
             self.indices = self.module.zeros_like(matrix)
@@ -99,15 +100,14 @@ class Accumulator:
         self.initialized = True
         return
 
-
     def update(self, matrix):
-        """ Update containers with new matrix. """
+        """Update containers with new matrix."""
         if not self.initialized:
             self.init(matrix.copy())
             return
 
         # No amortization: just store everything
-        if self.amortize is False or self.agg in ['stack', 'mode']:
+        if self.amortize is False or self.agg in ["stack", "mode"]:
             if self.total:
                 self.values[self.n, ...] = matrix
             else:
@@ -119,19 +119,19 @@ class Accumulator:
         # Amortization: update underlying containers
         slc = ~self.module.isnan(matrix)
 
-        if self.agg in ['min', 'nanmin']:
+        if self.agg in ["min", "nanmin"]:
             self.value[slc] = self.module.fmin(self.value[slc], matrix[slc])
 
-        elif self.agg in ['max', 'nanmax']:
+        elif self.agg in ["max", "nanmax"]:
             self.value[slc] = self.module.fmax(self.value[slc], matrix[slc])
 
-        elif self.agg in ['mean', 'nanmean']:
+        elif self.agg in ["mean", "nanmean"]:
             mask = np.logical_and(slc, self.module.isnan(self.value))
             self.value[mask] = 0.0
             self.value[slc] += matrix[slc]
             self.counts[slc] += 1
 
-        elif self.agg in ['std', 'nanstd']:
+        elif self.agg in ["std", "nanstd"]:
             mask = np.logical_and(slc, self.module.isnan(self.means))
             self.means[mask] = 0.0
             self.squared_means[mask] = 0.0
@@ -139,7 +139,7 @@ class Accumulator:
             self.squared_means[slc] += matrix[slc] ** 2
             self.counts[slc] += 1
 
-        elif self.agg in ['argmin', 'nanargmin']:
+        elif self.agg in ["argmin", "nanargmin"]:
             mask = self.module.logical_and(slc, self.module.isnan(self.value))
             self.value[mask] = matrix[mask]
             self.indices[mask] = self.n
@@ -148,7 +148,7 @@ class Accumulator:
             self.value[slc_] = matrix[slc_]
             self.indices[slc_] = self.n
 
-        elif self.agg in ['argmax', 'nanargmax']:
+        elif self.agg in ["argmax", "nanargmax"]:
             mask = self.module.logical_and(slc, self.module.isnan(self.value))
             self.value[mask] = matrix[mask]
             self.indices[mask] = self.n
@@ -161,9 +161,9 @@ class Accumulator:
         return
 
     def get(self, final=False):
-        """ Use stored matrices to get the aggregated result. """
+        """Use stored matrices to get the aggregated result."""
         # No amortization: apply function along the axis to the stacked array
-        if self.amortize is False or self.agg in ['stack', 'mode']:
+        if self.amortize is False or self.agg in ["stack", "mode"]:
             if self.total:
                 stacked = self.values
             else:
@@ -172,19 +172,21 @@ class Accumulator:
             if final:
                 self.values = None
 
-            if self.agg in ['stack']:
+            if self.agg in ["stack"]:
                 value = stacked
 
-            elif self.agg in ['mode']:
+            elif self.agg in ["mode"]:
                 uniques = self.module.unique(stacked)
 
-                accumulator = Accumulator('argmax')
+                accumulator = Accumulator("argmax")
                 for item in uniques[~self.module.isnan(uniques)]:
                     counts = (stacked == item).sum(axis=self.axis)
                     accumulator.update(counts)
                 indices = accumulator.get(final=True)
                 value = uniques[indices]
-                value[self.module.isnan(self.module.max(stacked, axis=self.axis))] = self.module.nan
+                value[self.module.isnan(self.module.max(stacked, axis=self.axis))] = (
+                    self.module.nan
+                )
 
             else:
                 value = getattr(self.module, self.agg)(stacked, axis=self.axis)
@@ -192,24 +194,24 @@ class Accumulator:
             return value
 
         # Amortization: compute desired aggregation
-        if self.agg in ['min', 'nanmin', 'max', 'nanmax']:
+        if self.agg in ["min", "nanmin", "max", "nanmax"]:
             value = self.value
 
-        elif self.agg in ['mean', 'nanmean']:
+        elif self.agg in ["mean", "nanmean"]:
             slc = self.counts > 0
             value = self.value if final else self.value.copy()
             value[slc] /= self.counts[slc]
 
-        elif self.agg in ['std', 'nanstd']:
+        elif self.agg in ["std", "nanstd"]:
             slc = self.counts > 0
             means = self.means if final else self.means.copy()
             means[slc] /= self.counts[slc]
 
             squared_means = self.squared_means if final else self.squared_means.copy()
             squared_means[slc] /= self.counts[slc]
-            value = self.module.sqrt(squared_means - means ** 2)
+            value = self.module.sqrt(squared_means - means**2)
 
-        elif self.agg in ['argmin', 'argmax', 'nanargmin', 'nanargmax']:
+        elif self.agg in ["argmin", "argmax", "nanargmin", "nanargmax"]:
             value = self.indices
 
         return value

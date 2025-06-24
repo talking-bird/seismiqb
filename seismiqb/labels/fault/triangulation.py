@@ -1,4 +1,5 @@
-""" Triangulation functions. """
+"""Triangulation functions."""
+
 import numpy as np
 from numba import njit
 from scipy.spatial import Delaunay
@@ -6,7 +7,7 @@ from scipy.spatial import Delaunay
 
 @njit
 def triangle_rasterization(points, width=1):
-    """ Transform triangle to surface of the fixed thickness.
+    """Transform triangle to surface of the fixed thickness.
 
     Parameters
     ----------
@@ -25,18 +26,26 @@ def triangle_rasterization(points, width=1):
     i = 0
     r_margin = width - width // 2
     l_margin = width // 2
-    for x in range(int(np.min(points[:, 0]))-l_margin, int(np.max(points[:, 0]))+r_margin): # pylint: disable=not-an-iterable
-        for y in range(int(np.min(points[:, 1]))-l_margin, int(np.max(points[:, 1])+r_margin)):
-            for z in range(int(np.min(points[:, 2]))-l_margin, int(np.max(points[:, 2]))+r_margin):
+    for x in range(
+        int(np.min(points[:, 0])) - l_margin, int(np.max(points[:, 0])) + r_margin
+    ):  # pylint: disable=not-an-iterable
+        for y in range(
+            int(np.min(points[:, 1])) - l_margin, int(np.max(points[:, 1]) + r_margin)
+        ):
+            for z in range(
+                int(np.min(points[:, 2])) - l_margin,
+                int(np.max(points[:, 2])) + r_margin,
+            ):
                 node = np.array([x, y, z])
                 if distance_to_triangle(points, node) <= width / 2:
                     _points[i] = node
                     i += 1
     return _points[:i]
 
+
 @njit
 def triangle_volume(points, width):
-    """ Compute triangle volume to estimate the number of points. """
+    """Compute triangle volume to estimate the number of points."""
     a = points[0] - points[1]
     a = np.sqrt(a[0] ** 2 + a[1] ** 2 + a[2] ** 2)
 
@@ -53,8 +62,11 @@ def triangle_volume(points, width):
     p_ = p * r_ / r
     return p_ * r_ * (width + 1)
 
-def sticks_to_simplices(sticks, orientation, max_simplices_depth=None, max_nodes_distance=None):
-    """ Compute triangulation of the fault.
+
+def sticks_to_simplices(
+    sticks, orientation, max_simplices_depth=None, max_nodes_distance=None
+):
+    """Compute triangulation of the fault.
 
     Parameters
     ----------
@@ -76,7 +88,9 @@ def sticks_to_simplices(sticks, orientation, max_simplices_depth=None, max_nodes
     nodes = np.concatenate(sticks)
     shift = 0
     for s1, s2 in zip(sticks[:-1], sticks[1:]):
-        simplices = connect_two_sticks(s1, s2, orientation=orientation, max_nodes_distance=max_nodes_distance)
+        simplices = connect_two_sticks(
+            s1, s2, orientation=orientation, max_nodes_distance=max_nodes_distance
+        )
         if len(simplices) > 0:
             simplices += shift
             all_simplices.append(simplices)
@@ -87,8 +101,9 @@ def sticks_to_simplices(sticks, orientation, max_simplices_depth=None, max_nodes
         return all_simplices[mask], nodes
     return np.zeros((0, 3)), np.zeros((0, 3))
 
+
 def connect_two_sticks(nodes1, nodes2, axis=2, orientation=0, max_nodes_distance=20):
-    """ Create triangles for two sequential sticks. """
+    """Create triangles for two sequential sticks."""
     ranges1, ranges2 = filter_points(nodes1, nodes2, axis, max_nodes_distance)
 
     p1, p2 = nodes1[slice(*ranges1)], nodes2[slice(*ranges2)]
@@ -98,15 +113,16 @@ def connect_two_sticks(nodes1, nodes2, axis=2, orientation=0, max_nodes_distance
         return []
     try:
         simplices = Delaunay(points[:, [orientation, axis]]).simplices
-    except: # pylint: disable=bare-except
+    except:  # pylint: disable=bare-except
         return []
-    l1 = (ranges1[1] - ranges1[0])
+    l1 = ranges1[1] - ranges1[0]
     simplices[simplices >= l1] += ranges2[0] + (len(nodes1) - ranges1[1])
     simplices += ranges1[0]
     return simplices
 
+
 def filter_points(nodes1, nodes2, axis=2, max_nodes_distance=20):
-    """ Remove nodes which are too far from each other. """
+    """Remove nodes which are too far from each other."""
     if max_nodes_distance is None:
         return (0, len(nodes1)), (0, len(nodes2))
 
@@ -132,7 +148,7 @@ def filter_points(nodes1, nodes2, axis=2, max_nodes_distance=20):
         nodes1, nodes2 = nodes2, nodes1
         ranges1, ranges2 = ranges2, ranges1
 
-    for end in range(len(nodes2)-1, -1, -1):
+    for end in range(len(nodes2) - 1, -1, -1):
         if (nodes2[end, axis] - nodes1[-1, axis]) < max_nodes_distance:
             break
 
@@ -144,19 +160,21 @@ def filter_points(nodes1, nodes2, axis=2, max_nodes_distance=20):
 
     return ranges1, ranges2
 
+
 def filter_triangles(triangles, points, max_simplices_depth=10):
-    """ Remove large triangles. """
-    mask = np.ones(len(triangles), dtype='bool')
+    """Remove large triangles."""
+    mask = np.ones(len(triangles), dtype="bool")
     if max_simplices_depth is not None:
         for i, tri in enumerate(triangles):
             if points[tri].ptp(axis=0).max() > max_simplices_depth:
                 mask[i] = 0
     return mask
 
+
 @njit
 def distance_to_triangle(triangle, node):
-    """ Paper: https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
-    Realization: https://gist.github.com/joshuashaffer/99d58e4ccbd37ca5d96e """
+    """Paper: https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
+    Realization: https://gist.github.com/joshuashaffer/99d58e4ccbd37ca5d96e"""
     # pylint: disable=invalid-name, too-many-nested-blocks, too-many-branches, too-many-statements
     B = triangle[0, :]
     E0 = triangle[1, :] - B
@@ -174,7 +192,7 @@ def distance_to_triangle(triangle, node):
     t = b * d - a * e
 
     if det == 0:
-        return 0.
+        return 0.0
 
     # Terrible tree of conditionals to determine in which region of the diagram
     # shown above the projection of the point into the triangle-plane lies.
@@ -228,7 +246,9 @@ def distance_to_triangle(triangle, node):
                 else:
                     if -d >= a:
                         s = 1
-                        sqrdistance = a + 2.0 * d + f  # GF 20101013 fixed typo d*s ->2*d
+                        sqrdistance = (
+                            a + 2.0 * d + f
+                        )  # GF 20101013 fixed typo d*s ->2*d
                     else:
                         s = -d / a
                         sqrdistance = d * s + f
@@ -237,7 +257,9 @@ def distance_to_triangle(triangle, node):
                 invDet = 1.0 / det
                 s = s * invDet
                 t = t * invDet
-                sqrdistance = s * (a * s + b * t + 2.0 * d) + t * (b * s + c * t + 2.0 * e) + f
+                sqrdistance = (
+                    s * (a * s + b * t + 2.0 * d) + t * (b * s + c * t + 2.0 * e) + f
+                )
     else:
         if s < 0.0:
             # region 2
@@ -253,7 +275,9 @@ def distance_to_triangle(triangle, node):
                 else:
                     s = numer / denom
                     t = 1 - s
-                    sqrdistance = s * (a * s + b * t + 2 * d) + t * (b * s + c * t + 2 * e) + f
+                    sqrdistance = (
+                        s * (a * s + b * t + 2 * d) + t * (b * s + c * t + 2 * e) + f
+                    )
 
             else:  # minimum on edge s=0
                 s = 0.0
@@ -283,7 +307,11 @@ def distance_to_triangle(triangle, node):
                     else:
                         t = numer / denom
                         s = 1 - t
-                        sqrdistance = s * (a * s + b * t + 2.0 * d) + t * (b * s + c * t + 2.0 * e) + f
+                        sqrdistance = (
+                            s * (a * s + b * t + 2.0 * d)
+                            + t * (b * s + c * t + 2.0 * e)
+                            + f
+                        )
 
                 else:
                     t = 0.0
@@ -313,7 +341,11 @@ def distance_to_triangle(triangle, node):
                     else:
                         s = numer / denom
                         t = 1 - s
-                        sqrdistance = s * (a * s + b * t + 2.0 * d) + t * (b * s + c * t + 2.0 * e) + f
+                        sqrdistance = (
+                            s * (a * s + b * t + 2.0 * d)
+                            + t * (b * s + c * t + 2.0 * e)
+                            + f
+                        )
 
     # account for numerical round-off error
     sqrdistance = max(sqrdistance, 0)

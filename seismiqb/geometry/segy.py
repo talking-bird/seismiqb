@@ -1,5 +1,6 @@
-""" Class to work with seismic data in SEG-Y format. """
-#pylint: disable=not-an-iterable
+"""Class to work with seismic data in SEG-Y format."""
+
+# pylint: disable=not-an-iterable
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -13,9 +14,8 @@ from .segyio_loader import SegyioLoader
 from .memmap_loader import MemmapLoader
 
 
-
 class GeometrySEGY(Geometry):
-    """ Class to infer information about SEG-Y cubes and provide convenient methods for working with them.
+    """Class to infer information about SEG-Y cubes and provide convenient methods for working with them.
 
     In order to initialize instance, one must supply `path`, `index_headers` and `additional_headers`:
         - `path` is a location of SEG-Y file
@@ -42,28 +42,48 @@ class GeometrySEGY(Geometry):
 
     Refer to the documentation of the base class :class:`Geometry` for more information about attributes and parameters.
     """
+
     # Headers to use as a unique id of a trace
-    INDEX_HEADERS_PRESTACK = ('FieldRecord', 'TraceNumber')
-    INDEX_HEADERS_POSTSTACK = ('INLINE_3D', 'CROSSLINE_3D')
-    INDEX_HEADERS_CDP = ('CDP_Y', 'CDP_X')
+    INDEX_HEADERS_PRESTACK = ("FieldRecord", "TraceNumber")
+    INDEX_HEADERS_POSTSTACK = ("INLINE_3D", "CROSSLINE_3D")
+    INDEX_HEADERS_CDP = ("CDP_Y", "CDP_X")
 
     # Headers to load from SEG-Y cube
-    ADDITIONAL_HEADERS_PRESTACK_FULL = ('FieldRecord', 'TraceNumber', 'TRACE_SEQUENCE_FILE',
-                                        'CDP', 'CDP_TRACE', 'offset')
-    ADDITIONAL_HEADERS_POSTSTACK_FULL = ('INLINE_3D', 'CROSSLINE_3D', 'CDP_X', 'CDP_Y')
+    ADDITIONAL_HEADERS_PRESTACK_FULL = (
+        "FieldRecord",
+        "TraceNumber",
+        "TRACE_SEQUENCE_FILE",
+        "CDP",
+        "CDP_TRACE",
+        "offset",
+    )
+    ADDITIONAL_HEADERS_POSTSTACK_FULL = ("INLINE_3D", "CROSSLINE_3D", "CDP_X", "CDP_Y")
 
-    def init(self, path, index_headers=INDEX_HEADERS_POSTSTACK, additional_headers=ADDITIONAL_HEADERS_POSTSTACK_FULL,
-             loader_class=MemmapLoader, reload_headers=False, dump_headers=True, load_headers_params=None,
-             collect_stats=True, recollect_stats=False, collect_stats_params=None, dump_meta=True, endian='big',
-             **kwargs):
-        """ Init for SEG-Y geometry. The sequence of actions:
-            - initialize loader instance
-            - load headers by reading SEG-Y or reading from meta
-            - compute additional attributes from indexing headers
-            - validate structure of the coordinate system, created by the indexing headers
-            - collect stats by full SEG-Y sweep or reading from meta
-            - dump meta for future inits.
+    def init(
+        self,
+        path,
+        index_headers=INDEX_HEADERS_POSTSTACK,
+        additional_headers=ADDITIONAL_HEADERS_POSTSTACK_FULL,
+        loader_class=MemmapLoader,
+        reload_headers=False,
+        dump_headers=True,
+        load_headers_params=None,
+        collect_stats=True,
+        recollect_stats=False,
+        collect_stats_params=None,
+        dump_meta=True,
+        endian="big",
+        **kwargs,
+    ):
+        """Init for SEG-Y geometry. The sequence of actions:
+        - initialize loader instance
+        - load headers by reading SEG-Y or reading from meta
+        - compute additional attributes from indexing headers
+        - validate structure of the coordinate system, created by the indexing headers
+        - collect stats by full SEG-Y sweep or reading from meta
+        - dump meta for future inits.
         """
+
         # Store attributes
         self.index_headers = list(index_headers)
         self.additional_headers = list(additional_headers)
@@ -81,13 +101,13 @@ class GeometrySEGY(Geometry):
         self.sample_rate = self.loader.sample_rate
 
         self.dtype = self.loader.dtype
-        self.quantized = (self.dtype == np.int8)
+        self.quantized = self.dtype == np.int8
 
         self.segy_path = self.loader.path
         try:
-            self.segy_text = [item.decode('ascii') for item in self.loader.text]
-        except: #pylint: disable=bare-except
-            self.segy_text = ['*'*3200]
+            self.segy_text = [item.decode("ascii") for item in self.loader.text]
+        except:  # pylint: disable=bare-except
+            self.segy_text = ["*" * 3200]
 
         # If all stats are already available in meta, use them
         required_attributes = (
@@ -96,7 +116,10 @@ class GeometrySEGY(Geometry):
             + self.PRESERVED_LAZY_CACHED
             + self.PRESERVED_LAZY_MISC
         )
-        meta_exists_and_has_attributes = self.meta_storage.exists and self.meta_storage.has_items(required_attributes)
+        meta_exists_and_has_attributes = (
+            self.meta_storage.exists
+            and self.meta_storage.has_items(required_attributes)
+        )
 
         if meta_exists_and_has_attributes and not (reload_headers or recollect_stats):
             self.load_meta(keys=required_attributes)
@@ -105,25 +128,27 @@ class GeometrySEGY(Geometry):
 
         # Load all of the requested headers, either from SEG-Y directly or previously stored dump
         headers_to_load = list(set(index_headers) | set(additional_headers))
-
-        if self.meta_storage.has_item(key='headers') and not reload_headers:
-            headers = self.meta_storage.read_item(key='headers')
+        if self.meta_storage.has_item(key="headers") and not reload_headers:
+            headers = self.meta_storage.read_item(key="headers")
         else:
             load_headers_params = load_headers_params or {}
             headers = self.load_headers(headers_to_load, **load_headers_params)
             if dump_headers:
-                self.meta_storage.store_item(key='headers', value=headers)
+                self.meta_storage.store_item(key="headers", value=headers)
         self.headers = headers
 
         # Infer attributes based on indexing headers: values and coordinates
         self.add_index_attributes()
 
-        if 'INLINE_3D' in self.index_headers and 'CROSSLINE_3D' in self.index_headers:
+        if "INLINE_3D" in self.index_headers and "CROSSLINE_3D" in self.index_headers:
             self.rotation_matrix = self.compute_rotation_matrix()
 
         # Collect amplitude stats, either by passing through SEG-Y or from previously stored dump
         required_attributes = self.PRESERVED + self.PRESERVED_LAZY
-        meta_exists_and_has_attributes = self.meta_storage.exists and self.meta_storage.has_items(required_attributes)
+        meta_exists_and_has_attributes = (
+            self.meta_storage.exists
+            and self.meta_storage.has_items(required_attributes)
+        )
 
         if meta_exists_and_has_attributes and not recollect_stats:
             self.load_meta(keys=self.PRESERVED)
@@ -136,43 +161,62 @@ class GeometrySEGY(Geometry):
             self.compute_dead_traces()
             self.has_stats = False
 
-        if hasattr(self, 'n_alive_traces') and self.n_alive_traces is not None:
+        if hasattr(self, "n_alive_traces") and self.n_alive_traces is not None:
             try:
                 self.area = self.compute_area()
             except IndexError:
-                self.area = -1.
+                self.area = -1.0
 
         # Dump inferred attributes to a separate file for later loads
         if dump_meta and not meta_exists_and_has_attributes:
             self.dump_meta()
 
     def _infer_loader_class(self, loader_class):
-        """ Select appropriate loader class. """
+        """Select appropriate loader class."""
         if isinstance(loader_class, type):
             return loader_class
-        if 'seg' in loader_class:
+        if "seg" in loader_class:
             return SegyioLoader
         return MemmapLoader
 
-    def load_headers(self, headers_to_load, reconstruct_tsf=True, chunk_size=25_000, max_workers=4, pbar=False):
-        """ Load all of the requested headers into dataframe. """
-        return self.loader.load_headers(headers_to_load, reconstruct_tsf=reconstruct_tsf,
-                                        chunk_size=chunk_size, max_workers=max_workers, pbar=pbar)
+    def load_headers(
+        self,
+        headers_to_load,
+        reconstruct_tsf=True,
+        chunk_size=25_000,
+        max_workers=4,
+        pbar=False,
+    ):
+        """Load all of the requested headers into dataframe."""
+        return self.loader.load_headers(
+            headers_to_load,
+            reconstruct_tsf=reconstruct_tsf,
+            chunk_size=chunk_size,
+            max_workers=max_workers,
+            pbar=pbar,
+        )
 
     def add_index_attributes(self):
-        """ Add attributes, based on the values of indexing headers. """
+        """Add attributes, based on the values of indexing headers."""
         # For each indexing headers compute set of its values, its sorted version,
         # and the mapping from each unique value to its ordinal in sorted list
-        self.index_unsorted_uniques = [np.unique(self.headers[index_header])
-                                       for index_header in self.index_headers]
-        self.index_sorted_uniques = [np.sort(item) for item in self.index_unsorted_uniques]
-        self.index_value_to_ordinal = [{value: i for i, value in enumerate(item)}
-                                       for item in self.index_sorted_uniques]
+        self.index_unsorted_uniques = [
+            np.unique(self.headers[index_header]) for index_header in self.index_headers
+        ]
+        self.index_sorted_uniques = [
+            np.sort(item) for item in self.index_unsorted_uniques
+        ]
+        self.index_value_to_ordinal = [
+            {value: i for i, value in enumerate(item)}
+            for item in self.index_sorted_uniques
+        ]
 
         # Infer coordinates for indexing headers
         self.shifts = [np.min(item) for item in self.index_sorted_uniques]
         self.lengths = [len(item) for item in self.index_sorted_uniques]
-        self.ranges = [(np.min(item), np.max(item)) for item in self.index_sorted_uniques]
+        self.ranges = [
+            (np.min(item), np.max(item)) for item in self.index_sorted_uniques
+        ]
         self.shape = np.array([*self.lengths, self.depth])
 
         # Check if indexing headers provide regular structure
@@ -183,7 +227,7 @@ class GeometrySEGY(Geometry):
             unique_increments = set(increments) or set([1])
 
             if len(unique_increments) > 1:
-                print(f'`{index_header}` has irregular spacing! {unique_increments}')
+                print(f"`{index_header}` has irregular spacing! {unique_increments}")
                 regular_structure = False
             else:
                 self.increments.append(unique_increments.pop())
@@ -191,14 +235,14 @@ class GeometrySEGY(Geometry):
 
         # Create indexing matrix
         if self.index_length == 2:
-            index_matrix = self.compute_header_values_matrix('TRACE_SEQUENCE_FILE')
+            index_matrix = self.compute_header_values_matrix("TRACE_SEQUENCE_FILE")
             index_matrix[index_matrix != -1] -= 1
             self.index_matrix = index_matrix
 
             self.absent_traces_matrix = (self.index_matrix == -1).astype(np.bool_)
 
     def compute_dead_traces(self, frequency=100):
-        """ Fallback for dead traces matrix computation, if no full stats are collected. """
+        """Fallback for dead traces matrix computation, if no full stats are collected."""
         slices = self.loader.load_depth_slices(list(range(0, self.depth, frequency)))
 
         if slices.shape[-1] == np.prod(self.lengths):
@@ -209,9 +253,8 @@ class GeometrySEGY(Geometry):
             self.n_dead_traces = np.sum(self.dead_traces_matrix)
             self.n_alive_traces = np.prod(self.lengths) - self.n_dead_traces
 
-
     def compute_header_values_matrix(self, header):
-        """ Mapping from ordinal inline/crossline coordinate to the value of header. """
+        """Mapping from ordinal inline/crossline coordinate to the value of header."""
         index_values = self.headers[self.index_headers].values
         index_ordinals = self.lines_to_ordinals(index_values)
         idx_0, idx_1 = index_ordinals[:, 0], index_ordinals[:, 1]
@@ -221,9 +264,8 @@ class GeometrySEGY(Geometry):
         matrix[idx_0, idx_1] = self.headers[header]
         return matrix
 
-
     # Compute additional stats from CDP/LINES correspondence
-    def compute_rotation_matrix(self, n_points:int=10) -> np.ndarray:
+    def compute_rotation_matrix(self, n_points: int = 10) -> np.ndarray:
         """Computes a 2x3 affine transformation matrix to map inline/crossline coordinates to CDP_X/Y.
 
         Parameters
@@ -279,15 +321,15 @@ class GeometrySEGY(Geometry):
         ix_recovered = np.rint(ix_recovered)
         # Compare with original IX
         errors = np.linalg.norm(ix - ix_recovered, axis=1)
-        assert (
-            errors.max() == 0
-        ), f"The inline and crossline coordinates were not recovered right from cdp coordinates."
+        assert errors.max() == 0, (
+            f"The inline and crossline coordinates were not recovered right from cdp coordinates."
+        )
         # =======================================================================================================
 
         return rotation_matrix
 
     def compute_area(self, shift=50):
-        """ Compute approximate area of the cube in square kilometers. """
+        """Compute approximate area of the cube in square kilometers."""
         central_i = self.shape[0] // 2
         central_x = self.shape[1] // 2
 
@@ -300,20 +342,26 @@ class GeometrySEGY(Geometry):
         row_dx = self.headers.iloc[tsf_dx]
 
         # CDP_X/CDP_Y coordinate system is rotated on 90 degrees with respect to INLINE_3D/CROSSLINE_3D
-        if row_di['CDP_X'] - row['CDP_X'] == 0 and row_dx['CDP_Y'] - row['CDP_Y'] == 0:
+        if row_di["CDP_X"] - row["CDP_X"] == 0 and row_dx["CDP_Y"] - row["CDP_Y"] == 0:
             row_di, row_dx = row_dx, row_di
 
         # Size of one "trace bin"
-        cdp_x_delta_km = abs(row_di['CDP_X'] - row['CDP_X']) / shift / 1000
-        cdp_y_delta_km = abs(row_dx['CDP_Y'] - row['CDP_Y']) / shift / 1000
+        cdp_x_delta_km = abs(row_di["CDP_X"] - row["CDP_X"]) / shift / 1000
+        cdp_y_delta_km = abs(row_dx["CDP_Y"] - row["CDP_Y"]) / shift / 1000
         area = cdp_x_delta_km * cdp_y_delta_km * self.n_alive_traces
         return round(area, 2)
 
-
     # Collect stats
-    def collect_stats(self, chunk_size=20, max_workers=16,
-                      n_quantile_traces=100_000, quantile_precision=3, seed=42, pbar='t'):
-        """ One sweep through the entire SEG-Y data to collects stats, which are available as instance attributes:
+    def collect_stats(
+        self,
+        chunk_size=20,
+        max_workers=16,
+        n_quantile_traces=100_000,
+        quantile_precision=3,
+        seed=42,
+        pbar="t",
+    ):
+        """One sweep through the entire SEG-Y data to collects stats, which are available as instance attributes:
             - global: one number for the entire cube, e.g. `mean`
             - spatial: a matrix of values for each trace, e.g. `mean_matrix`
             - depth-wise: one value for each depth slice, e.g. `mean_vector`.
@@ -359,8 +407,12 @@ class GeometrySEGY(Geometry):
         chunk_weights = np.array(chunk_sizes, dtype=np.float64) / n
 
         # Define buffers: chunked vectors
-        self.min_vector_chunked = np.full((n_chunks, self.depth), np.inf, dtype=np.float32)
-        self.max_vector_chunked = np.full((n_chunks, self.depth), -np.inf, dtype=np.float32)
+        self.min_vector_chunked = np.full(
+            (n_chunks, self.depth), np.inf, dtype=np.float32
+        )
+        self.max_vector_chunked = np.full(
+            (n_chunks, self.depth), -np.inf, dtype=np.float32
+        )
         self.mean_vector_chunked = np.zeros((n_chunks, self.depth), dtype=np.float64)
         self.var_vector_chunked = np.zeros((n_chunks, self.depth), dtype=np.float64)
 
@@ -371,24 +423,35 @@ class GeometrySEGY(Geometry):
         self.var_matrix = np.zeros(self.lengths, dtype=np.float64)
 
         # Read data in chunks, compute stats for each of them, store into buffer
-        description = f'Collecting stats for `{self.name}`'
+        description = f"Collecting stats for `{self.name}`"
         with Notifier(pbar, total=n, desc=description, ncols=110) as progress_bar:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
+
                 def callback(future):
                     chunk_size = future.result()
                     progress_bar.update(chunk_size)
 
                 for chunk_i, (start, end) in enumerate(zip(chunk_starts, chunk_ends)):
-                    future = executor.submit(self.collect_stats_chunk,
-                                             start=start, end=end, chunk_i=chunk_i)
+                    future = executor.submit(
+                        self.collect_stats_chunk, start=start, end=end, chunk_i=chunk_i
+                    )
                     future.add_done_callback(callback)
 
         # Finalize vectors
-        self.min_vector = np.average(self.min_vector_chunked, axis=0, weights=chunk_weights)
-        self.max_vector = np.average(self.max_vector_chunked, axis=0, weights=chunk_weights)
-        mean_vector = np.average(self.mean_vector_chunked, axis=0, weights=chunk_weights)
-        var_vector = np.average(self.var_vector_chunked + (self.mean_vector_chunked - mean_vector)**2,
-                                axis=0, weights=chunk_weights)
+        self.min_vector = np.average(
+            self.min_vector_chunked, axis=0, weights=chunk_weights
+        )
+        self.max_vector = np.average(
+            self.max_vector_chunked, axis=0, weights=chunk_weights
+        )
+        mean_vector = np.average(
+            self.mean_vector_chunked, axis=0, weights=chunk_weights
+        )
+        var_vector = np.average(
+            self.var_vector_chunked + (self.mean_vector_chunked - mean_vector) ** 2,
+            axis=0,
+            weights=chunk_weights,
+        )
 
         self.mean_vector = mean_vector.astype(np.float32)
         self.std_vector = np.sqrt(var_vector).astype(np.float32)
@@ -399,9 +462,13 @@ class GeometrySEGY(Geometry):
         self.dead_traces_matrix = (self.min_matrix == self.max_matrix).astype(np.bool_)
 
         # Clean-up redundant buffers
-        del (self.min_vector_chunked, self.max_vector_chunked,
-             self.mean_vector_chunked, self.var_vector_chunked,
-             self.var_matrix)
+        del (
+            self.min_vector_chunked,
+            self.max_vector_chunked,
+            self.mean_vector_chunked,
+            self.var_vector_chunked,
+            self.var_matrix,
+        )
 
         # Add scalar values
         self.min = self.min_matrix[~self.dead_traces_matrix].min()
@@ -410,16 +477,21 @@ class GeometrySEGY(Geometry):
 
         n_dead_traces = np.sum(self.dead_traces_matrix)
         n_alive_traces = np.prod(self.lengths) - n_dead_traces
-        self.std = np.sqrt((self.std_matrix[~self.dead_traces_matrix] ** 2).sum() / n_alive_traces)
+        self.std = np.sqrt(
+            (self.std_matrix[~self.dead_traces_matrix] ** 2).sum() / n_alive_traces
+        )
 
         # Load subset of data to compute quantiles
         alive_traces_indices = self.index_matrix[~self.dead_traces_matrix].reshape(-1)
-        indices = np.random.default_rng(seed=seed).choice(alive_traces_indices,
-                                                          size=min(self.n_traces, n_quantile_traces))
+        indices = np.random.default_rng(seed=seed).choice(
+            alive_traces_indices, size=min(self.n_traces, n_quantile_traces)
+        )
         data = self.load_by_indices(indices)
 
-        quantile_support = np.round(np.linspace(0, 1, num=10**quantile_precision+1),
-                                    decimals=quantile_precision)
+        quantile_support = np.round(
+            np.linspace(0, 1, num=10**quantile_precision + 1),
+            decimals=quantile_precision,
+        )
         quantile_values = np.quantile(data, q=quantile_support)
         quantile_values[0], quantile_values[-1] = self.min, self.max
 
@@ -437,7 +509,7 @@ class GeometrySEGY(Geometry):
         self.n_dead_traces = n_dead_traces
 
     def collect_stats_chunk(self, start, end, chunk_i):
-        """ Read requested chunk, compute stats for it. """
+        """Read requested chunk, compute stats for it."""
         # Retrieve chunk data
         indices = self.index_matrix[start:end].reshape(-1)
 
@@ -445,21 +517,22 @@ class GeometrySEGY(Geometry):
         data = data.reshape(end - start, self.lengths[1], self.depth)
 
         # Actually compute all of the stats. Modifies buffers in-place
-        _collect_stats_chunk(data,
-                             min_vector=self.min_vector_chunked[chunk_i],
-                             max_vector=self.max_vector_chunked[chunk_i],
-                             mean_vector=self.mean_vector_chunked[chunk_i],
-                             var_vector=self.var_vector_chunked[chunk_i],
-                             min_matrix=self.min_matrix[start:end],
-                             max_matrix=self.max_matrix[start:end],
-                             mean_matrix=self.mean_matrix[start:end],
-                             var_matrix=self.var_matrix[start:end])
+        _collect_stats_chunk(
+            data,
+            min_vector=self.min_vector_chunked[chunk_i],
+            max_vector=self.max_vector_chunked[chunk_i],
+            mean_vector=self.mean_vector_chunked[chunk_i],
+            var_vector=self.var_vector_chunked[chunk_i],
+            min_matrix=self.min_matrix[start:end],
+            max_matrix=self.max_matrix[start:end],
+            mean_matrix=self.mean_matrix[start:end],
+            var_matrix=self.var_matrix[start:end],
+        )
         return end - start
-
 
     # Data loading: arbitrary trace indices
     def load_by_indices(self, indices, limits=None, buffer=None):
-        """ Read requested traces from SEG-Y file.
+        """Read requested traces from SEG-Y file.
         Value `-1` is interpreted as missing trace, and corresponding traces are filled with zeros.
 
         Parameters
@@ -480,8 +553,10 @@ class GeometrySEGY(Geometry):
         if -1 in indices:
             # Create new buffer to avoid copy on advanced indexing
             mask = indices >= 0
-            buffer_ = np.empty_like(buffer)[:mask.sum()]
-            self.loader.load_traces(indices=indices[mask], limits=limits, buffer=buffer_)
+            buffer_ = np.empty_like(buffer)[: mask.sum()]
+            self.loader.load_traces(
+                indices=indices[mask], limits=limits, buffer=buffer_
+            )
 
             buffer[mask] = buffer_
             buffer[~mask] = self.FILL_VALUE
@@ -490,7 +565,7 @@ class GeometrySEGY(Geometry):
         return buffer
 
     def load_depth_slices(self, indices, buffer=None):
-        """ Read requested depth slices from SEG-Y file. """
+        """Read requested depth slices from SEG-Y file."""
         if buffer is None:
             buffer = np.empty((len(indices), self.n_traces), dtype=self.dtype)
         else:
@@ -501,19 +576,21 @@ class GeometrySEGY(Geometry):
             buffer = buffer.reshape(len(indices), *self.lengths)
         else:
             idx = np.nonzero(self.index_matrix >= 0)
-            matrix = np.zeros(shape=(*self.spatial_shape, len(indices)), dtype=self.dtype)
+            matrix = np.zeros(
+                shape=(*self.spatial_shape, len(indices)), dtype=self.dtype
+            )
             matrix[idx] = buffer.T
             buffer = matrix.transpose(2, 0, 1)
         return buffer
 
     @property
     def mmap(self):
-        """ 3D memory map, that views the entire SEG-Y as one 3D array. """
+        """3D memory map, that views the entire SEG-Y as one 3D array."""
         return self.loader.data_mmap.reshape(self.shape)
 
     # Data loading: 2D
     def load_slide_native(self, index, axis=0, limits=None, buffer=None, safe=False):
-        """ Load one slide of data along specified axis.
+        """Load one slide of data along specified axis.
 
         Parameters
         ----------
@@ -539,7 +616,7 @@ class GeometrySEGY(Geometry):
 
     # Data loading: 3D
     def load_crop_native(self, locations, buffer=None, safe=False):
-        """ Load crop (3D subvolume) from the cube.
+        """Load crop (3D subvolume) from the cube.
 
         Parameters
         ----------
@@ -552,15 +629,22 @@ class GeometrySEGY(Geometry):
         shape = self.locations_to_shape(locations)
         axis = np.argmin(shape)
 
-        if axis in {0, 1} or shape[-1] > 50: #TODO: explain this constant
+        if axis in {0, 1} or shape[-1] > 50:  # TODO: explain this constant
             indices = self.index_matrix[locations[0], locations[1]].reshape(-1)
-            buffer = self.load_by_indices(indices=indices, limits=locations[-1], buffer=buffer)
+            buffer = self.load_by_indices(
+                indices=indices, limits=locations[-1], buffer=buffer
+            )
 
-            shape = [((slc.stop or stop) - (slc.start or 0)) for slc, stop in zip(locations, self.shape)]
+            shape = [
+                ((slc.stop or stop) - (slc.start or 0))
+                for slc, stop in zip(locations, self.shape)
+            ]
             buffer = buffer.reshape(shape)
         else:
             indices = np.arange(locations[-1].start, locations[-1].stop)
-            data = self.load_depth_slices(indices).transpose(1, 2, 0)[locations[0], locations[1]]
+            data = self.load_depth_slices(indices).transpose(1, 2, 0)[
+                locations[0], locations[1]
+            ]
 
             if buffer is None:
                 buffer = data
@@ -569,12 +653,12 @@ class GeometrySEGY(Geometry):
         return buffer
 
     def get_optimal_axis(self, locations=None, shape=None):
-        """ Choose the fastest axis for loading given locations. """
+        """Choose the fastest axis for loading given locations."""
         shape = shape or self.locations_to_shape(locations)
         return np.argsort(shape)[0]
 
     def load_section(self, locations, dtype=None):
-        """ Load section through `locations`.
+        """Load section through `locations`.
 
         Parameters
         ----------
@@ -600,15 +684,19 @@ class GeometrySEGY(Geometry):
         indices = []
         for start, stop in zip(locations[:-1], locations[1:]):
             indices.append(get_line_coordinates(start, stop)[:-1])
-        indices.append(np.array([locations[-1]], dtype='float32'))
+        indices.append(np.array([locations[-1]], dtype="float32"))
 
         support, weights = get_line_support(np.concatenate(indices))
 
         all_support_traces = np.concatenate(support)
-        unique_support, traces_indices = np.unique(all_support_traces, axis=0, return_inverse=True)
+        unique_support, traces_indices = np.unique(
+            all_support_traces, axis=0, return_inverse=True
+        )
         traces_indices = traces_indices.reshape(-1, 4)
 
-        traces = self.load_by_indices(self.index_matrix[unique_support[:, 0], unique_support[:, 1]])
+        traces = self.load_by_indices(
+            self.index_matrix[unique_support[:, 0], unique_support[:, 1]]
+        )
         section = interpolate(traces, traces_indices, weights)
         if np.issubdtype(dtype, np.integer):
             section = section.astype(dtype)
@@ -616,11 +704,20 @@ class GeometrySEGY(Geometry):
         indices = np.concatenate(indices)
         return section, indices, nodes
 
+
 @njit(nogil=True)
-def _collect_stats_chunk(data,
-                         min_vector, max_vector, mean_vector, var_vector,
-                         min_matrix, max_matrix, mean_matrix, var_matrix):
-    """ Compute stats of a 3D array: min, max, mean, variance.
+def _collect_stats_chunk(
+    data,
+    min_vector,
+    max_vector,
+    mean_vector,
+    var_vector,
+    min_matrix,
+    max_matrix,
+    mean_matrix,
+    var_matrix,
+):
+    """Compute stats of a 3D array: min, max, mean, variance.
 
     We use provided buffers to avoid unnecessary copies.
     We use buffers for mean and var to track the running sum of values / squared values.
@@ -638,31 +735,40 @@ def _collect_stats_chunk(data,
                 min_vector[d] = min(min_vector[d], trace_value)
                 max_vector[d] = max(max_vector[d], trace_value)
                 mean_vector[d] += trace_value64
-                var_vector[d] += trace_value64 ** 2
+                var_vector[d] += trace_value64**2
 
                 # Update matrices
                 min_matrix[i, x] = min(min_matrix[i, x], trace_value)
                 max_matrix[i, x] = max(max_matrix[i, x], trace_value)
                 mean_matrix[i, x] += trace_value64
-                var_matrix[i, x] += trace_value64 ** 2
+                var_matrix[i, x] += trace_value64**2
 
     # Finalize vectors
     area = shape[0] * shape[1]
     mean_vector /= area
     var_vector /= area
-    var_vector -= mean_vector ** 2
+    var_vector -= mean_vector**2
 
     # Finalize matrices
     mean_matrix /= shape[2]
     var_matrix /= shape[2]
-    var_matrix -= mean_matrix ** 2
+    var_matrix -= mean_matrix**2
 
-    return (min_vector, max_vector, mean_vector, var_vector,
-            min_matrix, max_matrix, mean_matrix, var_matrix)
+    return (
+        min_vector,
+        max_vector,
+        mean_vector,
+        var_vector,
+        min_matrix,
+        max_matrix,
+        mean_matrix,
+        var_matrix,
+    )
+
 
 @njit
 def get_line_coordinates(start, stop):
-    """ Get float coordinates of traces for line from `start` to `stop`.
+    """Get float coordinates of traces for line from `start` to `stop`.
 
     Parameters
     ----------
@@ -682,9 +788,10 @@ def get_line_coordinates(start, stop):
         locations[:, i] = np.linspace(start[i], stop[i], int(np.ceil(distance)) + 1)
     return locations
 
+
 @njit
 def get_line_support(locations):
-    """ Get support for non-integer locations.
+    """Get support for non-integer locations.
 
     Parameters
     ----------
@@ -702,7 +809,7 @@ def get_line_support(locations):
             coordinates, support will have duplicated traces and nan weights.
     """
     ceil, floor = np.ceil(locations), np.floor(locations)
-    support = np.empty((len(locations), 4, 2), dtype='int32')
+    support = np.empty((len(locations), 4, 2), dtype="int32")
     support[:, 0] = floor
     support[:, 1, 0] = floor[:, 0]
     support[:, 1, 1] = ceil[:, 1]
@@ -716,9 +823,10 @@ def get_line_support(locations):
 
     return support, weights
 
+
 @njit(parallel=True)
-def interpolate(traces, traces_indices, weights, dtype='float32'):
-    """ Interpolate traces with float coordinates by traces from support.
+def interpolate(traces, traces_indices, weights, dtype="float32"):
+    """Interpolate traces with float coordinates by traces from support.
 
     Parameters
     ----------

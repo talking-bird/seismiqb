@@ -1,4 +1,5 @@
-""" Faults utils: filterings, groupings. """
+"""Faults utils: filterings, groupings."""
+
 from collections import defaultdict
 import numpy as np
 from .coords_utils import bboxes_adjacent, dilate_coords
@@ -6,9 +7,14 @@ from .coords_utils import bboxes_adjacent, dilate_coords
 
 # Filters
 # Filter too small faults
-def filter_faults(faults, min_length_threshold=2000, min_height_threshold=20, min_n_points_threshold=30,
-                  **sticks_kwargs):
-    """ Filter too small faults.
+def filter_faults(
+    faults,
+    min_length_threshold=2000,
+    min_height_threshold=20,
+    min_n_points_threshold=30,
+    **sticks_kwargs,
+):
+    """Filter too small faults.
 
     Faults are filtered by amount of points, length and height.
     Used as default filtering after prototypes extraction.
@@ -26,26 +32,33 @@ def filter_faults(faults, min_length_threshold=2000, min_height_threshold=20, mi
         Arguments for fault conversion into sticks view.
     """
     config_sticks = {
-        'sticks_step': 10,
-        'stick_nodes_step': 10,
-        'move_bounds': False,
-        **sticks_kwargs
+        "sticks_step": 10,
+        "stick_nodes_step": 10,
+        "move_bounds": False,
+        **sticks_kwargs,
     }
 
     filtered_faults = []
 
     for fault in faults:
-        if (len(fault.points) < min_n_points_threshold) or (len(fault) < min_length_threshold):
+        if (len(fault.points) < min_n_points_threshold) or (
+            len(fault) < min_length_threshold
+        ):
             continue
 
-        fault.points_to_sticks(sticks_step=config_sticks['sticks_step'],
-                               stick_nodes_step=config_sticks['stick_nodes_step'],
-                               move_bounds=config_sticks['move_bounds'])
+        fault.points_to_sticks(
+            sticks_step=config_sticks["sticks_step"],
+            stick_nodes_step=config_sticks["stick_nodes_step"],
+            move_bounds=config_sticks["move_bounds"],
+        )
 
-        if len(fault.sticks) <= 2: # two sticks are not enough
+        if len(fault.sticks) <= 2:  # two sticks are not enough
             continue
 
-        if np.concatenate([item[:, 2] for item in fault.sticks]).ptp() < min_height_threshold:
+        if (
+            np.concatenate([item[:, 2] for item in fault.sticks]).ptp()
+            < min_height_threshold
+        ):
             continue
 
         filtered_faults.append(fault)
@@ -54,8 +67,10 @@ def filter_faults(faults, min_length_threshold=2000, min_height_threshold=20, mi
 
 
 # Filter small disconnected faults
-def filter_disconnected_faults(faults, direction=0, height_threshold=200, width_threshold=40, **kwargs):
-    """ Filter small enough faults without any adjacent neighbors.
+def filter_disconnected_faults(
+    faults, direction=0, height_threshold=200, width_threshold=40, **kwargs
+):
+    """Filter small enough faults without any adjacent neighbors.
 
     Parameters
     ----------
@@ -94,8 +109,9 @@ def filter_disconnected_faults(faults, direction=0, height_threshold=200, width_
 
     return filtered_faults
 
+
 def _group_adjacent_faults(faults, adjacency=5, adjacent_points_threshold=5):
-    """ Add faults into groups by adjacency criterion.
+    """Add faults into groups by adjacency criterion.
 
     Helper for the :func:`~.filter_disconnected_faults`.
 
@@ -109,27 +125,31 @@ def _group_adjacent_faults(faults, adjacency=5, adjacent_points_threshold=5):
         Minimal amount of points into adjacency area to consider two faults are in one group.
     """
     # Containers for adjacency graph
-    groups = {} # group owner -> items
-    owners = {} # item -> group owner
+    groups = {}  # group owner -> items
+    owners = {}  # item -> group owner
 
     for i, fault_1 in enumerate(faults):
         if i not in owners.keys():
             owners[i] = i
 
-        for j, fault_2 in enumerate(faults[i+1:]):
-            adjacent_borders = bboxes_adjacent(fault_1.bbox, fault_2.bbox, adjacency=adjacency)
+        for j, fault_2 in enumerate(faults[i + 1 :]):
+            adjacent_borders = bboxes_adjacent(
+                fault_1.bbox, fault_2.bbox, adjacency=adjacency
+            )
 
             if adjacent_borders is None:
                 continue
 
             # Check points amount in the adjacency area
             for fault in (fault_1, fault_2):
-                adjacent_points = fault.points[(fault.points[:, 0] >= adjacent_borders[0][0]) & \
-                                               (fault.points[:, 0] <= adjacent_borders[0][1]) & \
-                                               (fault.points[:, 1] >= adjacent_borders[1][0]) & \
-                                               (fault.points[:, 1] <= adjacent_borders[1][1]) & \
-                                               (fault.points[:, 2] >= adjacent_borders[2][0]) & \
-                                               (fault.points[:, 2] <= adjacent_borders[2][1])]
+                adjacent_points = fault.points[
+                    (fault.points[:, 0] >= adjacent_borders[0][0])
+                    & (fault.points[:, 0] <= adjacent_borders[0][1])
+                    & (fault.points[:, 1] >= adjacent_borders[1][0])
+                    & (fault.points[:, 1] <= adjacent_borders[1][1])
+                    & (fault.points[:, 2] >= adjacent_borders[2][0])
+                    & (fault.points[:, 2] <= adjacent_borders[2][1])
+                ]
 
                 if len(adjacent_points) < adjacent_points_threshold:
                     adjacent_borders = None
@@ -139,21 +159,22 @@ def _group_adjacent_faults(faults, adjacency=5, adjacent_points_threshold=5):
                 continue
 
             # Graph update
-            owners[i+1+j] = owners[i]
+            owners[i + 1 + j] = owners[i]
 
             if owners[i] not in groups.keys():
                 groups[owners[i]] = set()
 
-            groups[owners[i]].add(i+1+j)
+            groups[owners[i]].add(i + 1 + j)
 
     return groups, owners
 
 
-
 # Groupings
 # Group connected faults
-def group_connected_prototypes(prototypes, connectivity_stats=None, ratio_threshold=0.0):
-    """ Group connected prototypes.
+def group_connected_prototypes(
+    prototypes, connectivity_stats=None, ratio_threshold=0.0
+):
+    """Group connected prototypes.
 
     Connected prototypes are prototypes where at least one prototype has border overlap
     with another more than `ratio_threshold`.
@@ -174,17 +195,18 @@ def group_connected_prototypes(prototypes, connectivity_stats=None, ratio_thresh
         connectivity_stats = eval_connectivity_stats(prototypes)
 
     # Unpack connectivity graph info
-    owners = {} # item -> owner
-    groups = defaultdict(set) # owner -> set(items)
+    owners = {}  # item -> owner
+    groups = defaultdict(set)  # owner -> set(items)
 
     for axis in (2, prototypes[0].direction):
         connectivity_stats_axis = connectivity_stats[axis]
 
         for prototype_1_idx, connect in connectivity_stats_axis.items():
             for prototype_2_idx, stat_values in connect.items():
-
-                if stat_values['overlap_ratio'] > ratio_threshold:
-                    owners, groups = _add_connected_pair(prototype_1_idx, prototype_2_idx, owners=owners, groups=groups)
+                if stat_values["overlap_ratio"] > ratio_threshold:
+                    owners, groups = _add_connected_pair(
+                        prototype_1_idx, prototype_2_idx, owners=owners, groups=groups
+                    )
 
     # Label prototypes group
     for idx, label in enumerate(prototypes):
@@ -198,8 +220,9 @@ def group_connected_prototypes(prototypes, connectivity_stats=None, ratio_thresh
 
     return prototypes
 
+
 def eval_connectivity_stats(prototypes):
-    """ Evaluation of overlap length and ratio for each prototypes pair.
+    """Evaluation of overlap length and ratio for each prototypes pair.
 
     Note, zero-overlapping stats are omitted.
 
@@ -208,13 +231,13 @@ def eval_connectivity_stats(prototypes):
     direction = prototypes[0].direction
     orthogonal_direction = 1 - direction
 
-    margin = 1 # local constant for code prettifying
-    borders_to_check = {2: ('up', 'down'), direction: ('left', 'right')}
+    margin = 1  # local constant for code prettifying
+    borders_to_check = {2: ("up", "down"), direction: ("left", "right")}
 
     connectivity_stats = {2: defaultdict(dict), direction: defaultdict(dict)}
 
     for i, prototype_1 in enumerate(prototypes):
-        for j, prototype_2 in enumerate(prototypes[i+1:]):
+        for j, prototype_2 in enumerate(prototypes[i + 1 :]):
             # Check prototypes adjacency
             adjacent_borders = bboxes_adjacent(prototype_1.bbox, prototype_2.bbox)
 
@@ -227,18 +250,29 @@ def eval_connectivity_stats(prototypes):
                 # Find object contours on close borders
                 is_first_upper = prototype_1.bbox[axis, 0] < prototype_2.bbox[axis, 0]
 
-                contour_1 = prototype_1.get_border(border=check_borders[is_first_upper],
-                                                   projection_axis=orthogonal_direction)
-                contour_2 = prototype_2.get_border(border=check_borders[~is_first_upper],
-                                                   projection_axis=orthogonal_direction)
+                contour_1 = prototype_1.get_border(
+                    border=check_borders[is_first_upper],
+                    projection_axis=orthogonal_direction,
+                )
+                contour_2 = prototype_2.get_border(
+                    border=check_borders[~is_first_upper],
+                    projection_axis=orthogonal_direction,
+                )
 
                 # Get border contours in the area of interest
-                overlap_range = (min(adjacent_borders[axis]) - margin, max(adjacent_borders[axis]) + margin)
+                overlap_range = (
+                    min(adjacent_borders[axis]) - margin,
+                    max(adjacent_borders[axis]) + margin,
+                )
 
-                contour_1 = contour_1[(contour_1[:, axis] >= overlap_range[0]) & \
-                                      (contour_1[:, axis] <= overlap_range[1])]
-                contour_2 = contour_2[(contour_2[:, axis] >= overlap_range[0]) & \
-                                      (contour_2[:, axis] <= overlap_range[1])]
+                contour_1 = contour_1[
+                    (contour_1[:, axis] >= overlap_range[0])
+                    & (contour_1[:, axis] <= overlap_range[1])
+                ]
+                contour_2 = contour_2[
+                    (contour_2[:, axis] >= overlap_range[0])
+                    & (contour_2[:, axis] <= overlap_range[1])
+                ]
 
                 # If one data contour is much longer than other, then we can't connect them as puzzle details
                 if len(contour_1) == 0 or len(contour_2) == 0:
@@ -249,19 +283,28 @@ def eval_connectivity_stats(prototypes):
                 contour_1[:, axis] += shift
 
                 # Save stats
-                overlap_1, overlap_1_ratio = _contours_overlap_stats(contour_1, contour_2,
-                                                                     dilation_direction=orthogonal_direction)
-                overlap_2, overlap_2_ratio = _contours_overlap_stats(contour_2, contour_1,
-                                                                     dilation_direction=orthogonal_direction)
+                overlap_1, overlap_1_ratio = _contours_overlap_stats(
+                    contour_1, contour_2, dilation_direction=orthogonal_direction
+                )
+                overlap_2, overlap_2_ratio = _contours_overlap_stats(
+                    contour_2, contour_1, dilation_direction=orthogonal_direction
+                )
 
                 if overlap_1 > 0:
-                    connectivity_stats[axis][i][j+i+1] = {'overlap_length': overlap_1, 'overlap_ratio': overlap_1_ratio}
-                    connectivity_stats[axis][j+i+1][i] = {'overlap_length': overlap_2, 'overlap_ratio': overlap_2_ratio}
+                    connectivity_stats[axis][i][j + i + 1] = {
+                        "overlap_length": overlap_1,
+                        "overlap_ratio": overlap_1_ratio,
+                    }
+                    connectivity_stats[axis][j + i + 1][i] = {
+                        "overlap_length": overlap_2,
+                        "overlap_ratio": overlap_2_ratio,
+                    }
 
     return connectivity_stats
 
+
 def _contours_overlap_stats(contour_1, contour_2, dilation_direction, dilation=3):
-    """ Evaluate contours overlap.
+    """Evaluate contours overlap.
 
     Under the hood, we eval `contour_1` overlap statistics with dilated `contour_2`,
     because we suppsose that connected prototypes can be shifted to each other.
@@ -269,17 +312,19 @@ def _contours_overlap_stats(contour_1, contour_2, dilation_direction, dilation=3
     contour_1_set = set(tuple(x) for x in contour_1)
 
     # Objects can be shifted on `dilation_direction`, so apply dilation for coords
-    contour_2_dilated = dilate_coords(coords=contour_2, dilate=dilation,
-                                      axis=dilation_direction)
+    contour_2_dilated = dilate_coords(
+        coords=contour_2, dilate=dilation, axis=dilation_direction
+    )
 
     contour_2_dilated = set(tuple(x) for x in contour_2_dilated)
 
     # Eval stats
     overlap = contour_1_set.intersection(contour_2_dilated)
-    return len(overlap), len(overlap)/len(contour_1_set)
+    return len(overlap), len(overlap) / len(contour_1_set)
+
 
 def _add_connected_pair(prototype_1_idx, prototype_2_idx, owners, groups):
-    """ Add prototypes pair into group.
+    """Add prototypes pair into group.
 
     We save connectivity info into two dicts:
     - owners (item -> owner) - information about which group the item belongs to;
@@ -323,9 +368,14 @@ def _add_connected_pair(prototype_1_idx, prototype_2_idx, owners, groups):
 
 
 # Group faults with topK biggest faults and filter faults out of groups
-def groups_with_biggest_faults(faults, height_threshold=None, groups_num=None,
-                                  adjacency=5, adjacent_points_threshold=5):
-    """ Get faults which can be merged in groups with the biggest faults.
+def groups_with_biggest_faults(
+    faults,
+    height_threshold=None,
+    groups_num=None,
+    adjacency=5,
+    adjacent_points_threshold=5,
+):
+    """Get faults which can be merged in groups with the biggest faults.
 
     The biggest faults are faults with height more than `height_threshold` or
     which have topK-height, where K is `groups_num`.
@@ -349,20 +399,22 @@ def groups_with_biggest_faults(faults, height_threshold=None, groups_num=None,
     adjacent_points_threshold : int
         Minimal amount of fault points into adjacency area to consider that two faults are in one group.
     """
-    #pylint: disable=invalid-unary-operand-type
+    # pylint: disable=invalid-unary-operand-type
     if (groups_num is None) and (height_threshold is None):
         raise ValueError("One of `groups_num` or `height_threshold` must be not None!")
 
     # Get height threshold from groups num
     if height_threshold is None:
-        heights = [fault.bbox[-1][1]-fault.bbox[-1][0]+1 for fault in faults]
-        height_threshold = np.sort(heights)[-groups_num:-groups_num+1]
+        heights = [fault.bbox[-1][1] - fault.bbox[-1][0] + 1 for fault in faults]
+        height_threshold = np.sort(heights)[-groups_num : -groups_num + 1]
 
     # Find neighbors for the biggest faults and faults, that are included in groups with the biggest faults
     filtered_faults = []
 
     for fault_1 in faults:
-        if (fault_1 not in filtered_faults) and (fault_1.bbox[-1][1] - fault_1.bbox[-1][0] + 1 < height_threshold):
+        if (fault_1 not in filtered_faults) and (
+            fault_1.bbox[-1][1] - fault_1.bbox[-1][0] + 1 < height_threshold
+        ):
             continue
 
         if fault_1 not in filtered_faults:
@@ -372,19 +424,23 @@ def groups_with_biggest_faults(faults, height_threshold=None, groups_num=None,
             if fault_2 in filtered_faults:
                 continue
 
-            adjacent_borders = bboxes_adjacent(fault_1.bbox, fault_2.bbox, adjacency=adjacency)
+            adjacent_borders = bboxes_adjacent(
+                fault_1.bbox, fault_2.bbox, adjacency=adjacency
+            )
 
             if adjacent_borders is None:
                 continue
 
             # Check points amount in the adjacency area
             for fault in (fault_1, fault_2):
-                adjacent_points = fault.points[(fault.points[:, 0] >= adjacent_borders[0][0]) & \
-                                               (fault.points[:, 0] <= adjacent_borders[0][1]) & \
-                                               (fault.points[:, 1] >= adjacent_borders[1][0]) & \
-                                               (fault.points[:, 1] <= adjacent_borders[1][1]) & \
-                                               (fault.points[:, 2] >= adjacent_borders[2][0]) & \
-                                               (fault.points[:, 2] <= adjacent_borders[2][1])]
+                adjacent_points = fault.points[
+                    (fault.points[:, 0] >= adjacent_borders[0][0])
+                    & (fault.points[:, 0] <= adjacent_borders[0][1])
+                    & (fault.points[:, 1] >= adjacent_borders[1][0])
+                    & (fault.points[:, 1] <= adjacent_borders[1][1])
+                    & (fault.points[:, 2] >= adjacent_borders[2][0])
+                    & (fault.points[:, 2] <= adjacent_borders[2][1])
+                ]
 
                 if len(adjacent_points) < adjacent_points_threshold:
                     adjacent_borders = None

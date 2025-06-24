@@ -1,4 +1,5 @@
-""" Helper function for models validation."""
+"""Helper function for models validation."""
+
 import os
 
 import numpy as np
@@ -14,11 +15,20 @@ from .. import SeismicDataset, RegularGrid
 from ..utils import Accumulator3D, take_along_axis
 
 
-def make_slide_prediction(field, model_or_path, index, axis=0,
-                          batch_size=64, crop_shape=(1, 256, 512),
-                          inference_3d=True, inference_width=10,
-                          minsize=5, threshold=0.1, dilation_iterations=1):
-    """ Make model inference on a field slide.
+def make_slide_prediction(
+    field,
+    model_or_path,
+    index,
+    axis=0,
+    batch_size=64,
+    crop_shape=(1, 256, 512),
+    inference_3d=True,
+    inference_width=10,
+    minsize=5,
+    threshold=0.1,
+    dilation_iterations=1,
+):
+    """Make model inference on a field slide.
 
     Parameters
     ----------
@@ -52,37 +62,50 @@ def make_slide_prediction(field, model_or_path, index, axis=0,
     ranges = [None, None, None]
     ranges[axis] = [index - inference_width, index + inference_width + 1]
 
-    grid = RegularGrid(field=field,
-                       threshold=0, orientation=axis,
-                       ranges=ranges,
-                       batch_size=batch_size,
-                       crop_shape=crop_shape, overlap_factor=2)
+    grid = RegularGrid(
+        field=field,
+        threshold=0,
+        orientation=axis,
+        ranges=ranges,
+        batch_size=batch_size,
+        crop_shape=crop_shape,
+        overlap_factor=2,
+    )
 
     if inference_3d:
-        grid_other = RegularGrid(field=field,
-                                 threshold=0, orientation=1-axis,
-                                 ranges=ranges,
-                                 batch_size=batch_size,
-                                 crop_shape=crop_shape, overlap_factor=2)
+        grid_other = RegularGrid(
+            field=field,
+            threshold=0,
+            orientation=1 - axis,
+            ranges=ranges,
+            batch_size=batch_size,
+            crop_shape=crop_shape,
+            overlap_factor=2,
+        )
         grid += grid_other
 
-    accumulator = Accumulator3D.from_grid(grid=grid, aggregation='weighted', fill_value=0)
+    accumulator = Accumulator3D.from_grid(
+        grid=grid, aggregation="weighted", fill_value=0
+    )
 
     # Inference
-    model = TorchModel(model_or_path) if isinstance(model_or_path, str) else model_or_path
+    model = (
+        TorchModel(model_or_path) if isinstance(model_or_path, str) else model_or_path
+    )
 
     inference_pipeline = (
         Pipeline()
         .make_locations(generator=grid, batch_size=batch_size)
-        .load_cubes(dst='images')
-        .normalize(src='images')
-
-        .import_model(name='model', source=model)
-        .predict_model('model', inputs=B('images'), outputs='sigmoid', save_to=B('predictions'))
-        .update_accumulator(src='predictions', accumulator=accumulator)
+        .load_cubes(dst="images")
+        .normalize(src="images")
+        .import_model(name="model", source=model)
+        .predict_model(
+            "model", inputs=B("images"), outputs="sigmoid", save_to=B("predictions")
+        )
+        .update_accumulator(src="predictions", accumulator=accumulator)
     ) << SeismicDataset(field)
 
-    inference_pipeline.run(n_iters=grid.n_iters, notifier='t', pbar=False)
+    inference_pipeline.run(n_iters=grid.n_iters, notifier="t", pbar=False)
     prediction = accumulator.aggregate()
 
     # Smoothing
@@ -112,12 +135,16 @@ def make_slide_prediction(field, model_or_path, index, axis=0,
 
     # Modify slice
     prediction = (prediction > threshold).astype(np.int32)
-    prediction = binary_dilation(prediction, iterations=dilation_iterations).astype(np.float32)
+    prediction = binary_dilation(prediction, iterations=dilation_iterations).astype(
+        np.float32
+    )
     return prediction
 
 
-def plot_slide_prediction(field, index, axis, prediction, zoom='auto', show=True, savepath=None, **kwargs):
-    """ Plot prediction on a field slide.
+def plot_slide_prediction(
+    field, index, axis, prediction, zoom="auto", show=True, savepath=None, **kwargs
+):
+    """Plot prediction on a field slide.
 
     Parameters
     ----------
@@ -140,29 +167,36 @@ def plot_slide_prediction(field, index, axis, prediction, zoom='auto', show=True
     kwargs : dict
         Other parameters to pass to the plotting function.
     """
-    prediction[prediction == 0] = np.nan # For correct visualization
+    prediction[prediction == 0] = np.nan  # For correct visualization
 
     # Parse parameters
     if zoom is None:
         zoom = (slice(None), slice(None))
 
     if (savepath is not None) and os.path.isdir(savepath):
-        filename = f'{field.short_name}_axis_{axis}_index_{index}_zoom_{zoom}.png'
+        filename = f"{field.short_name}_axis_{axis}_index_{index}_zoom_{zoom}.png"
         savepath = os.path.join(savepath, filename)
 
     if savepath is not None:
-        kwargs['savepath'] = savepath
+        kwargs["savepath"] = savepath
 
-    if kwargs.get('indices', None) is None:
+    if kwargs.get("indices", None) is None:
         # disable labels drawing on the slide by default
-        kwargs['indices'] = ()
+        kwargs["indices"] = ()
 
     # Plotting
-    plotter = field.show_slide(index=index, axis=axis, show=False, zoom=zoom,
-                               suptitle_size=4, suptitle_y=0.88,
-                               title=None, suptitle=None,
-                               **kwargs)
-    plotter.plot(prediction.T, cmap='darkorange')
+    plotter = field.show_slide(
+        index=index,
+        axis=axis,
+        show=False,
+        zoom=zoom,
+        suptitle_size=4,
+        suptitle_y=0.88,
+        title=None,
+        suptitle=None,
+        **kwargs,
+    )
+    plotter.plot(prediction.T, cmap="darkorange")
     if show:
         plotter.redraw()
 

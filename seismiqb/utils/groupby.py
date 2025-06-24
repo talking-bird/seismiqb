@@ -1,12 +1,12 @@
-""" Faster version of groupby operations for numpy arrays. """
+"""Faster version of groupby operations for numpy arrays."""
+
 import numpy as np
 from numba import njit
 
 
-
 @njit
 def groupby_mean(array):
-    """ Faster version of mean-groupby of data along the first two columns.
+    """Faster version of mean-groupby of data along the first two columns.
     Input array is supposed to have (N, 3) shape.
     """
     n = len(array)
@@ -36,9 +36,10 @@ def groupby_mean(array):
     position += 1
     return output[:position]
 
+
 @njit
 def groupby_min(array):
-    """ Faster version of min-groupby of data along the first two columns.
+    """Faster version of min-groupby of data along the first two columns.
     Input array is supposed to have (N, 3) shape.
     """
     n = len(array)
@@ -67,9 +68,10 @@ def groupby_min(array):
     position += 1
     return output[:position]
 
+
 @njit
 def groupby_max(array):
-    """ Faster version of max-groupby of data along the first two columns.
+    """Faster version of max-groupby of data along the first two columns.
     Input array is supposed to have (N, 3) shape.
     """
     n = len(array)
@@ -98,9 +100,10 @@ def groupby_max(array):
     position += 1
     return output[:position]
 
+
 @njit
 def groupby_prob(array, probabilities):
-    """ Faster version of weighted mean groupby of data along the first two columns.
+    """Faster version of weighted mean groupby of data along the first two columns.
     Input array is supposed to have (N, 3) shape.
     """
     n = len(array)
@@ -134,7 +137,7 @@ def groupby_prob(array, probabilities):
 
 @njit
 def groupby_all(array):
-    """ For each trace, compute the number of points on it, min, max and mean values.
+    """For each trace, compute the number of points on it, min, max and mean values.
     `array` is expected to be of `(N, 3)` shape. Trace is defined by all points with the same first two coordinates.
     """
     # iline, crossline, occurency, min_, max_, mean_
@@ -161,11 +164,11 @@ def groupby_all(array):
 
         else:
             # New iline, crossline: store stats, re-initialize values
-            output[position, :2] = previous   # iline, crossline
-            output[position, 2] = c           # occurency
-            output[position, 3] = min_        # min_
-            output[position, 4] = max_        # max_
-            output[position, 5] = s / c       # mean_
+            output[position, :2] = previous  # iline, crossline
+            output[position, 2] = c  # occurency
+            output[position, 3] = min_  # min_
+            output[position, 4] = max_  # max_
+            output[position, 5] = s / c  # mean_
             position += 1
 
             depth_ = current[-1]
@@ -176,11 +179,11 @@ def groupby_all(array):
             c = 1
 
     # The last point
-    output[position, :2] = previous   # iline, crossline
-    output[position, 2] = c           # occurency
-    output[position, 3] = min_        # min_
-    output[position, 4] = max_        # max_
-    output[position, 5] = s / c       # mean_
+    output[position, :2] = previous  # iline, crossline
+    output[position, 2] = c  # occurency
+    output[position, 3] = min_  # min_
+    output[position, 4] = max_  # max_
+    output[position, 5] = s / c  # mean_
     position += 1
 
     return output[:position]

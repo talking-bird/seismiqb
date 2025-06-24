@@ -1,18 +1,21 @@
-""" A wrapper around `SyntheticGenerator` to provide the same API, as regular `:class:.Field`. """
+"""A wrapper around `SyntheticGenerator` to provide the same API, as regular `:class:.Field`."""
+
 import numpy as np
 
 from batchflow import Config
 from ..utils import lru_cache
 from ..plotters import plot
 
+
 class GeometryMock:
-    """ Mock for Geometry. """
+    """Mock for Geometry."""
+
     def __getattr__(self, _):
         return None
 
 
 class SyntheticField:
-    """ A wrapper around `SyntheticGenerator` to provide the same API, as regular `:class:.Field`.
+    """A wrapper around `SyntheticGenerator` to provide the same API, as regular `:class:.Field`.
 
     The intended use of this class is:
         - define a `param_generator` function, that returns a dictionary with parameters of seismic generation.
@@ -59,11 +62,19 @@ class SyntheticField:
     cache_maxsize : int
         Number of cached generators. Should be equal or bigger than the batch size.
     """
+
     GENERATOR_CONSTRUCTOR = None
 
-    #pylint: disable=method-hidden, protected-access, not-callable
-    def __init__(self, param_generator=None, data_generator=None, name='synthetic_field', cache_maxsize=128,
-                 default_attribute=None, default_shape=None):
+    # pylint: disable=method-hidden, protected-access, not-callable
+    def __init__(
+        self,
+        param_generator=None,
+        data_generator=None,
+        name="synthetic_field",
+        cache_maxsize=128,
+        default_attribute=None,
+        default_shape=None,
+    ):
         # Data generation
         self.param_generator = param_generator
         self.data_generator = data_generator
@@ -75,9 +86,9 @@ class SyntheticField:
         self.default_shape = default_shape
 
         # String info
-        self.path = self.short_path = f'{name}_path'
+        self.path = self.short_path = f"{name}_path"
         self.name = self.short_name = self.short_name = name
-        self.index_headers = self.axis_names = ['INLINE_3D', 'CROSSLINE_3D']
+        self.index_headers = self.axis_names = ["INLINE_3D", "CROSSLINE_3D"]
 
         # Attributes to comply with `:class:.Field` API
         self.geometry = GeometryMock()
@@ -91,35 +102,39 @@ class SyntheticField:
 
     @property
     def labels(self):
-        """ Property for sampler creation. Used as a signal that this field is in fact synthetic. """
+        """Property for sampler creation. Used as a signal that this field is in fact synthetic."""
         return self
 
     # Generator creation
     def get_generator(self, locations=None, shape=None):
-        """ Get a generator with data of a given `shape`.
+        """Get a generator with data of a given `shape`.
         If called with the same parameters twice, returns the same instance: `locations` is used as a hash value.
         """
         if locations is None:
             shape = shape if shape is not None else self.default_shape
 
             if shape is None:
-                raise ValueError('Shape is undefined: pass it directly or supply a `default_shape` at initialization!')
+                raise ValueError(
+                    "Shape is undefined: pass it directly or supply a `default_shape` at initialization!"
+                )
             locations = self.shape_to_locations(shape)
 
         hash_value = self.locations_to_hash(locations)
 
         generator = self._make_generator(hash_value)
-        self._populate_generator(generator=generator, locations=locations) # Works in-place!
+        self._populate_generator(
+            generator=generator, locations=locations
+        )  # Works in-place!
         return generator
 
     # @lru_cache
     def _make_generator(self, hash_value):
-        """ Create a generator instance. During initialization, wrapped in `lru_cache`. """
+        """Create a generator instance. During initialization, wrapped in `lru_cache`."""
         return self.GENERATOR_CONSTRUCTOR(seed=abs(hash_value))
 
     def _populate_generator(self, generator, locations=None):
-        """ Call `generator` methods to populate it with data: impedance model, horizon surfaces, faults, etc. """
-        if hasattr(generator, '_populated'):
+        """Call `generator` methods to populate it with data: impedance model, horizon surfaces, faults, etc."""
+        if hasattr(generator, "_populated"):
             return None
 
         if self.data_generator is not None:
@@ -132,29 +147,28 @@ class SyntheticField:
             params = Config(params)
 
             # Compute velocity model, using the velocity vector and horizon matrices
-            (generator
-             .init_shapes(**params['init_shapes'])
-             .make_velocities(**params['make_velocities'])
-             .make_horizons(**params['make_horizons'])
-             .make_velocity_model(**params['make_velocity_model'])
-             )
+            (
+                generator.init_shapes(**params["init_shapes"])
+                .make_velocities(**params["make_velocities"])
+                .make_horizons(**params["make_horizons"])
+                .make_velocity_model(**params["make_velocity_model"])
+            )
 
             # Faults
-            for fault_params in params.get('make_fault_2d', []):
+            for fault_params in params.get("make_fault_2d", []):
                 generator.make_fault_2d(**fault_params)
 
-            for fault_params in params.get('make_fault_3d', []):
+            for fault_params in params.get("make_fault_3d", []):
                 generator.make_fault_3d(**fault_params)
 
             # Finalize synthetic creation
-            (generator
-             .make_density_model(**params['make_density_model'])
-             .make_impedance_model(**params['make_impedance_model'])
-             .make_reflectivity_model(**params['make_reflectivity_model'])
-
-             .make_synthetic(**params['make_synthetic'])
-             .postprocess_synthetic(**params['postprocess_synthetic'])
-             .cleanup(**params['cleanup'])
+            (
+                generator.make_density_model(**params["make_density_model"])
+                .make_impedance_model(**params["make_impedance_model"])
+                .make_reflectivity_model(**params["make_reflectivity_model"])
+                .make_synthetic(**params["make_synthetic"])
+                .postprocess_synthetic(**params["postprocess_synthetic"])
+                .cleanup(**params["cleanup"])
             )
 
             generator.params = params
@@ -162,10 +176,11 @@ class SyntheticField:
         generator._populated = True
         return None
 
-
     # Getting data
-    def get_attribute(self, locations=None, shape=None, attribute='synthetic', buffer=None, **kwargs):
-        """ Output requested `attribute`.
+    def get_attribute(
+        self, locations=None, shape=None, attribute="synthetic", buffer=None, **kwargs
+    ):
+        """Output requested `attribute`.
         If `locations` is not provided, uses `shape` to create a random one.
         For the same `locations` values, uses the same generator instance (with the same velocity model):
         >>> locations = (slice(10, 11), slice(100, 200), slice(1000, 1500))
@@ -177,45 +192,44 @@ class SyntheticField:
         generator = self.get_generator(locations=locations, shape=shape)
 
         # Select what is `labels`
-        if attribute == 'labels':
+        if attribute == "labels":
             if self.default_attribute is not None:
                 attribute = self.default_attribute
             else:
-                attribute = generator.params.get('attribute')
+                attribute = generator.params.get("attribute")
 
             if attribute is None:
-                raise ValueError('Attribute `labels` is undefined: use `default_attribute`'
-                                 'or a key in `param_generator` to define what to retrieve!')
+                raise ValueError(
+                    "Attribute `labels` is undefined: use `default_attribute`"
+                    "or a key in `param_generator` to define what to retrieve!"
+                )
 
         # Main: velocity, reflectivity, synthetic
-        if attribute in ['synthetic', 'geometry', 'image']:
-            result = generator.get_attribute(attribute='synthetic')
-        elif 'velocity' in attribute:
-            result = generator.get_attribute(attribute='velocity_model')
-        elif 'impedance' in attribute:
-            result = generator.get_attribute(attribute='impedance_model')
-        elif 'reflect' in attribute:
-            result = generator.get_attribute(attribute='reflectivity_model')
-        elif 'upward' in attribute:
+        if attribute in ["synthetic", "geometry", "image"]:
+            result = generator.get_attribute(attribute="synthetic")
+        elif "velocity" in attribute:
+            result = generator.get_attribute(attribute="velocity_model")
+        elif "impedance" in attribute:
+            result = generator.get_attribute(attribute="impedance_model")
+        elif "reflect" in attribute:
+            result = generator.get_attribute(attribute="reflectivity_model")
+        elif "upward" in attribute:
             result = generator.get_increasing_impedance_model()
 
         # Labels: horizons and faults
-        elif 'horizon' in attribute:
+        elif "horizon" in attribute:
             # Remove extra kwargs
-            _ = kwargs.pop('orientation', None)
-            _ = kwargs.pop('sparse', None)
+            _ = kwargs.pop("orientation", None)
+            _ = kwargs.pop("sparse", None)
 
-            kwargs = {
-                'indices': 'all',
-                'width': 3,
-                'format': 'mask',
-                **kwargs
-            }
+            kwargs = {"indices": "all", "width": 3, "format": "mask", **kwargs}
             result = generator.get_horizons(**kwargs)
-        elif 'amplified' in attribute:
-            result = generator.get_horizons(indices='amplified', format='mask', width=kwargs.get('width', 3))
-        elif 'fault' in attribute:
-            result = generator.get_faults(format='mask', width=kwargs.get('width', 3))
+        elif "amplified" in attribute:
+            result = generator.get_horizons(
+                indices="amplified", format="mask", width=kwargs.get("width", 3)
+            )
+        elif "fault" in attribute:
+            result = generator.get_faults(format="mask", width=kwargs.get("width", 3))
 
         # Fallback
         else:
@@ -229,35 +243,39 @@ class SyntheticField:
             buffer = result
         return buffer
 
+    def load_seismic(
+        self, locations=None, shape=None, src="synthetic", buffer=None, **kwargs
+    ):
+        """Wrapper around `:meth:.get_attribute` to comply with `:class:.Field` API."""
+        return self.get_attribute(
+            locations=locations, shape=shape, attribute=src, buffer=buffer, **kwargs
+        )
 
-    def load_seismic(self, locations=None, shape=None, src='synthetic', buffer=None, **kwargs):
-        """ Wrapper around `:meth:.get_attribute` to comply with `:class:.Field` API. """
-        return self.get_attribute(locations=locations, shape=shape, attribute=src, buffer=buffer, **kwargs)
-
-    def make_mask(self, locations=None, shape=None, src='labels', buffer=None, **kwargs):
-        """ Wrapper around `:meth:.get_attribute` to comply with `:class:.Field` API. """
-        return self.get_attribute(locations=locations, shape=shape, attribute=src, buffer=buffer, **kwargs)
-
+    def make_mask(
+        self, locations=None, shape=None, src="labels", buffer=None, **kwargs
+    ):
+        """Wrapper around `:meth:.get_attribute` to comply with `:class:.Field` API."""
+        return self.get_attribute(
+            locations=locations, shape=shape, attribute=src, buffer=buffer, **kwargs
+        )
 
     # Utilities
     def shape_to_locations(self, shape):
-        """ Make a randomized locations with desired shape. """
+        """Make a randomized locations with desired shape."""
         starts = np.random.randint((0, 0, 0), (10000, 10000, 10000))
-        return tuple(slice(start, start + s)
-                     for start, s in zip(starts, shape))
+        return tuple(slice(start, start + s) for start, s in zip(starts, shape))
 
     def locations_to_shape(self, locations):
-        """ Compute shape of a given locations. """
+        """Compute shape of a given locations."""
         return tuple(slc.stop - slc.start for slc in locations)
 
     def locations_to_hash(self, locations):
-        """ Compute hash value of a given locations. """
+        """Compute hash value of a given locations."""
         return hash(tuple((slc.start, slc.stop, slc.step) for slc in locations))
-
 
     @classmethod
     def velocity_to_seismic(cls, velocity, ricker_width=4.3):
-        """ Generate synthetic seismic out of velocity predictions. """
+        """Generate synthetic seismic out of velocity predictions."""
         result = []
         for velocity_array in velocity:
             generator = cls.GENERATOR_CONSTRUCTOR()
@@ -267,39 +285,40 @@ class SyntheticField:
             generator.shape = generator.shape_padded = velocity_array.shape
             generator.depth = generator.depth_padded = velocity_array.shape[-1]
 
-            (generator
-                .make_density_model(randomization=None)
+            (
+                generator.make_density_model(randomization=None)
                 .make_impedance_model()
                 .make_reflectivity_model()
-                .make_synthetic(ricker_width=ricker_width, ricker_points=100))
+                .make_synthetic(ricker_width=ricker_width, ricker_points=100)
+            )
             result.append(generator.synthetic)
 
         return np.stack(result).astype(np.float32)
 
     # Normalization
-    def make_normalization_stats(self, n=100, shape=None, attribute='synthetic'):
-        """ Compute normalization stats (`mean`, `std`, `min`, `max`, quantiles) from `n` generated `attributes`. """
+    def make_normalization_stats(self, n=100, shape=None, attribute="synthetic"):
+        """Compute normalization stats (`mean`, `std`, `min`, `max`, quantiles) from `n` generated `attributes`."""
         data = [self.get_attribute(shape=shape, attribute=attribute) for _ in range(n)]
         data = np.array(data)
 
         q01, q05, q95, q99 = np.quantile(data, (0.01, 0.05, 0.95, 0.99))
 
         normalization_stats = {
-            'mean': np.mean(data),
-            'std': np.std(data),
-            'min': np.min(data),
-            'max': np.max(data),
-            'q_01': q01,
-            'q_05': q05,
-            'q_95': q95,
-            'q_99': q99,
+            "mean": np.mean(data),
+            "std": np.std(data),
+            "min": np.min(data),
+            "max": np.max(data),
+            "q_01": q01,
+            "q_05": q05,
+            "q_95": q95,
+            "q_99": q99,
         }
         self._normalization_stats = normalization_stats
         return normalization_stats
 
     @property
     def normalization_stats(self):
-        """ Property with default normalization stats for synthetic images. """
+        """Property with default normalization stats for synthetic images."""
         if self._normalization_stats is None:
             self.make_normalization_stats()
         return self._normalization_stats
@@ -312,28 +331,30 @@ class SyntheticField:
         msg = f"SyntheticField `{self.short_name}`"
 
         if self.param_generator is not None:
-            attribute = self.param_generator.get('attribute')
+            attribute = self.param_generator.get("attribute")
             if attribute is not None:
-                msg += f':\n    - labels: attribute `{attribute}`'
+                msg += f":\n    - labels: attribute `{attribute}`"
         return msg
 
     def show_slide(self, locations=None, shape=None, **kwargs):
-        """ Create one generator and show underlying models, synthetic and masks. """
+        """Create one generator and show underlying models, synthetic and masks."""
         generator = self.get_generator(locations=locations, shape=shape)
         self._last_generator = generator
         return generator.show_slide(**kwargs)
 
-    def plot_roll(self, shape=None, attribute='synthetic', n=25, **kwargs):
-        """ Show attribute-images for a number of generators. """
-        data = [[self.get_attribute(shape=shape, attribute=attribute)[0]] for _ in range(n)]
+    def plot_roll(self, shape=None, attribute="synthetic", n=25, **kwargs):
+        """Show attribute-images for a number of generators."""
+        data = [
+            [self.get_attribute(shape=shape, attribute=attribute)[0]] for _ in range(n)
+        ]
 
         # Display images
         plot_config = {
-            'suptitle': f'Roll of `{attribute}`',
-            'title': list(range(n)),
-            'cmap': 'Greys_r',
-            'colorbar': True,
-            'ncols': 5,
-            **kwargs
+            "suptitle": f"Roll of `{attribute}`",
+            "title": list(range(n)),
+            "cmap": "Greys_r",
+            "colorbar": True,
+            "ncols": 5,
+            **kwargs,
         }
         return plot(data, **plot_config)

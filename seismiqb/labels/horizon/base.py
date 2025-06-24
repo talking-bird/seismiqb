@@ -1,4 +1,5 @@
-""" Horizon class for POST-STACK data. """
+"""Horizon class for POST-STACK data."""
+
 import os
 from copy import copy
 from textwrap import dedent
@@ -13,13 +14,25 @@ from .extraction import ExtractionMixin
 from .processing import ProcessingMixin
 from .visualization import HorizonVisualizationMixin
 from ...utils import CacheMixin, CharismaMixin, SQBStorage
-from ...utils import groupby_mean, groupby_min, groupby_max, groupby_prob, make_interior_points_mask
+from ...utils import (
+    groupby_mean,
+    groupby_min,
+    groupby_max,
+    groupby_prob,
+    make_interior_points_mask,
+)
 from ...utils import MetaDict
 
 
-
-class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, ProcessingMixin, HorizonVisualizationMixin):
-    """ Contains spatially-structured horizon: each point describes a depth on a particular (iline, xline) point.
+class Horizon(
+    AttributesMixin,
+    CacheMixin,
+    CharismaMixin,
+    ExtractionMixin,
+    ProcessingMixin,
+    HorizonVisualizationMixin,
+):
+    """Contains spatially-structured horizon: each point describes a depth on a particular (iline, xline) point.
 
     Initialized from `storage` and `field`, where storage can be one of:
         - csv-like file in CHARISMA or REDUCED_CHARISMA format.
@@ -74,16 +87,18 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
         - A wealth of visualization methods: view from above, slices along iline/xline axis, etc.
     """
-    #pylint: disable=too-many-public-methods, import-outside-toplevel, redefined-builtin
+
+    # pylint: disable=too-many-public-methods, import-outside-toplevel, redefined-builtin
 
     # Columns that are used from the file
-    COLUMNS = ['INLINE_3D', 'CROSSLINE_3D', 'DEPTH']
+    COLUMNS = ["INLINE_3D", "CROSSLINE_3D", "DEPTH"]
 
     # Value to place into blank spaces
     FILL_VALUE = -999999
 
-
-    def __init__(self, storage, field, name=None, format=None, dtype=np.int32, **kwargs):
+    def __init__(
+        self, storage, field, name=None, format=None, dtype=np.int32, **kwargs
+    ):
         # Meta information
         self.path = None
         self.name = name
@@ -121,39 +136,38 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
             if SQBStorage.is_storage(path):
                 # path to SQB storage
-                self.format = 'sqb'
+                self.format = "sqb"
 
             elif os.path.exists(path):
                 # path to csv-like file
-                self.format = 'charisma'
+                self.format = "charisma"
 
             else:
-                raise ValueError(f'Path {path} does not exist!')
+                raise ValueError(f"Path {path} does not exist!")
 
         elif isinstance(storage, np.ndarray):
             if storage.ndim == 2 and storage.shape[1] == 3:
                 # array with row in (iline, xline, depth) format
-                self.format = 'points'
+                self.format = "points"
 
             elif storage.ndim == 2 and (storage.shape == self.field.spatial_shape):
                 # matrix of (iline, xline) shape with every value being depth
-                self.format = 'full_matrix'
+                self.format = "full_matrix"
 
             elif storage.ndim == 2:
                 # matrix of (iline, xline) shape with every value being depth
-                self.format = 'matrix'
+                self.format = "matrix"
 
         elif isinstance(storage, dict):
             # mapping from (iline, xline) to (depth)
-            self.format = 'dict'
+            self.format = "dict"
 
-        getattr(self, f'from_{self.format}')(storage, **kwargs)
-
+        getattr(self, f"from_{self.format}")(storage, **kwargs)
 
     # Logic of lazy computation of `points` or `matrix` from the other available storage; cache management
     @property
     def points(self):
-        """ Storage of horizon data as (N, 3) array of (iline, xline, depth) in cubic coordinates.
+        """Storage of horizon data as (N, 3) array of (iline, xline, depth) in cubic coordinates.
         If the horizon is created not from (N, 3) array, evaluated at the time of the first access.
         """
         if self._points is None and self.matrix is not None:
@@ -168,23 +182,32 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
     @staticmethod
     def matrix_to_points(matrix):
-        """ Convert depth-map matrix to points array. """
+        """Convert depth-map matrix to points array."""
         idx = np.nonzero(matrix != Horizon.FILL_VALUE)
-        points = np.hstack([idx[0].reshape(-1, 1),
-                            idx[1].reshape(-1, 1),
-                            matrix[idx[0], idx[1]].reshape(-1, 1)])
+        points = np.hstack(
+            [
+                idx[0].reshape(-1, 1),
+                idx[1].reshape(-1, 1),
+                matrix[idx[0], idx[1]].reshape(-1, 1),
+            ]
+        )
         return points
-
 
     @property
     def matrix(self):
-        """ Storage of horizon data as depth map: matrix of (ilines_length, xlines_length) with each point
+        """Storage of horizon data as depth map: matrix of (ilines_length, xlines_length) with each point
         corresponding to depth. Matrix is shifted to a (i_min, x_min) point so it takes less space.
         If the horizon is created not from matrix, evaluated at the time of the first access.
         """
         if self._matrix is None and self.points is not None:
-            self._matrix = self.points_to_matrix(points=self.points, i_min=self.i_min, x_min=self.x_min,
-                                                 i_length=self.i_length, x_length=self.x_length, dtype=self.dtype)
+            self._matrix = self.points_to_matrix(
+                points=self.points,
+                i_min=self.i_min,
+                x_min=self.x_min,
+                i_length=self.i_length,
+                x_length=self.x_length,
+                dtype=self.dtype,
+            )
         return self._matrix
 
     @matrix.setter
@@ -193,17 +216,18 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
     @staticmethod
     def points_to_matrix(points, i_min, x_min, i_length, x_length, dtype=np.int32):
-        """ Convert array of (N, 3) shape to a depth map (matrix). """
+        """Convert array of (N, 3) shape to a depth map (matrix)."""
         matrix = np.full((i_length, x_length), Horizon.FILL_VALUE, dtype)
 
-        matrix[points[:, 0].astype(np.int32) - i_min,
-               points[:, 1].astype(np.int32) - x_min] = points[:, 2]
+        matrix[
+            points[:, 0].astype(np.int32) - i_min, points[:, 1].astype(np.int32) - x_min
+        ] = points[:, 2]
 
         return matrix
 
     @property
     def depths(self):
-        """ Array of depth only. Useful for faster stats computation when initialized from a matrix. """
+        """Array of depth only. Useful for faster stats computation when initialized from a matrix."""
         if self._depths is None:
             if self._points is not None:
                 self._depths = self.points[:, -1]
@@ -213,25 +237,28 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
     @property
     def bbox(self):
-        """ Horizon bbox in 2d-array format. """
+        """Horizon bbox in 2d-array format."""
         if self._bbox is None and self.raveled_bbox is not None:
             self._bbox = self.raveled_bbox.reshape(-1, 2)
         elif self._bbox is None:
-            self._bbox = np.array([[self.i_min, self.i_max],
-                                   [self.x_min, self.x_max],
-                                   [self.d_min, self.d_max]],
-                                  dtype=np.int32)
+            self._bbox = np.array(
+                [
+                    [self.i_min, self.i_max],
+                    [self.x_min, self.x_max],
+                    [self.d_min, self.d_max],
+                ],
+                dtype=np.int32,
+            )
         return self._bbox
 
-
     def reset_storage(self, storage=None, reset_cache=True):
-        """ Reset storage along with depth-wise lazy computed stats. """
+        """Reset storage along with depth-wise lazy computed stats."""
         self._depths = None
         self._d_min, self._d_max = None, None
         self._d_mean, self._d_std = None, None
         self._len = None
 
-        if storage == 'matrix':
+        if storage == "matrix":
             self._depth = None
             self._matrix = None
 
@@ -239,37 +266,59 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
                 i_min, x_min, d_min = np.min(self.points, axis=0)
                 i_max, x_max, d_max = np.max(self.points, axis=0)
 
-                self._d_min, self._d_max = d_min.astype(self.dtype), d_max.astype(self.dtype)
-                self.i_min, self.i_max, self.x_min, self.x_max = int(i_min), int(i_max), int(x_min), int(x_max)
+                self._d_min, self._d_max = (
+                    d_min.astype(self.dtype),
+                    d_max.astype(self.dtype),
+                )
+                self.i_min, self.i_max, self.x_min, self.x_max = (
+                    int(i_min),
+                    int(i_max),
+                    int(x_min),
+                    int(x_max),
+                )
 
                 self.i_length = (self.i_max - self.i_min) + 1
                 self.x_length = (self.x_max - self.x_min) + 1
-                self.raveled_bbox = np.array([self.i_min, self.i_max,
-                                              self.x_min, self.x_max,
-                                              self.d_min, self.d_max],
-                                             dtype=np.int32)
-        elif storage == 'points':
+                self.raveled_bbox = np.array(
+                    [
+                        self.i_min,
+                        self.i_max,
+                        self.x_min,
+                        self.x_max,
+                        self.d_min,
+                        self.d_max,
+                    ],
+                    dtype=np.int32,
+                )
+        elif storage == "points":
             self._points = None
 
         if reset_cache:
             self.reset_cache()
 
     def copy(self, add_prefix=True):
-        """ Create a new horizon with the same data.
+        """Create a new horizon with the same data.
 
         Returns
         -------
         A horizon object with new matrix object and a reference to the same field.
         """
-        prefix = 'copy_of_' if add_prefix else ''
-        return type(self)(storage=np.copy(self.matrix), field=self.field, i_min=self.i_min, x_min=self.x_min,
-                          name=f'{prefix}{self.name}')
+        prefix = "copy_of_" if add_prefix else ""
+        return type(self)(
+            storage=np.copy(self.matrix),
+            field=self.field,
+            i_min=self.i_min,
+            x_min=self.x_min,
+            name=f"{prefix}{self.name}",
+        )
 
     __copy__ = copy
 
     def __sub__(self, other):
         if not isinstance(other, type(self)):
-            raise TypeError(f"Operands types do not match. Got {type(self)} and {type(other)}.")
+            raise TypeError(
+                f"Operands types do not match. Got {type(self)} and {type(other)}."
+            )
 
         presence = other.full_binary_matrix
         discrepancies = self.full_matrix[presence] != other.full_matrix[presence]
@@ -283,38 +332,37 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
         return result
 
-
     # Properties, computed from lazy evaluated attributes
     @property
     def d_min(self):
-        """ Minimum depth value. """
+        """Minimum depth value."""
         if self._d_min is None:
             self._d_min = np.min(self.depths)
         return self._d_min
 
     @property
     def d_max(self):
-        """ Maximum depth value. """
+        """Maximum depth value."""
         if self._d_max is None:
             self._d_max = np.max(self.depths)
         return self._d_max
 
     @property
     def d_mean(self):
-        """ Average depth value. """
+        """Average depth value."""
         if self._d_mean is None:
             self._d_mean = np.mean(self.depths)
         return self._d_mean
 
     @property
     def d_std(self):
-        """ Std of depths. """
+        """Std of depths."""
         if self._d_std is None:
             self._d_std = np.std(self.depths)
         return self._d_std
 
     def __len__(self):
-        """ Number of labeled traces. """
+        """Number of labeled traces."""
         if self._len is None:
             if self._points is not None:
                 self._len = len(self.points)
@@ -322,10 +370,9 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
                 self._len = len(self.depths)
         return self._len
 
-
     # Initialization from different containers
-    def from_points(self, points, verify=True, dst='points', reset='matrix', **kwargs):
-        """ Base initialization: from point cloud array of (N, 3) shape.
+    def from_points(self, points, verify=True, dst="points", reset="matrix", **kwargs):
+        """Base initialization: from point cloud array of (N, 3) shape.
 
         Parameters
         ----------
@@ -354,32 +401,37 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         if reset:
             self.reset_storage(storage=reset, reset_cache=False)
 
-
     def from_charisma(self, path, transform=True, **kwargs):
-        """ Init from path to either CHARISMA or REDUCED_CHARISMA csv-like file. """
-        points = self.load_charisma(path=path, dtype=self.dtype, format='points',
-                                    fill_value=Horizon.FILL_VALUE, transform=transform,
-                                    verify=True)
+        """Init from path to either CHARISMA or REDUCED_CHARISMA csv-like file."""
+        points = self.load_charisma(
+            path=path,
+            dtype=self.dtype,
+            format="points",
+            fill_value=Horizon.FILL_VALUE,
+            transform=transform,
+            verify=True,
+        )
 
         self.from_points(points, verify=False, **kwargs)
 
     def from_sqb(self, path, **kwargs):
-        """ Init from path to SQB storage file. """
+        """Init from path to SQB storage file."""
         _ = kwargs
         storage = SQBStorage(path)
-        if storage.get('type') != 'horizon':
-            raise TypeError('SQB storage is not marked as horizon!')
+        if storage.get("type") != "horizon":
+            raise TypeError("SQB storage is not marked as horizon!")
 
-        points = storage['points']
+        points = storage["points"]
         self.from_points(points, verify=False, **kwargs)
 
-        for key in storage['attributes']:
+        for key in storage["attributes"]:
             setattr(self, key, storage[key])
         self.storage = storage
 
-
-    def from_matrix(self, matrix, i_min, x_min, d_min=None, d_max=None, length=None, **kwargs):
-        """ Init from matrix and location of minimum i, x points. """
+    def from_matrix(
+        self, matrix, i_min, x_min, d_min=None, d_max=None, length=None, **kwargs
+    ):
+        """Init from matrix and location of minimum i, x points."""
         _ = kwargs
 
         if matrix.dtype != self.dtype:
@@ -389,31 +441,28 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         self.matrix = matrix
 
         self.i_min, self.x_min = i_min, x_min
-        self.i_max, self.x_max = i_min + matrix.shape[0] - 1, x_min + matrix.shape[1] - 1
+        self.i_max, self.x_max = (
+            i_min + matrix.shape[0] - 1,
+            x_min + matrix.shape[1] - 1,
+        )
 
         self.i_length = (self.i_max - self.i_min) + 1
         self.x_length = (self.x_max - self.x_min) + 1
 
         # Populate lazy properties with supplied values
         self._d_min, self._d_max, self._len = d_min, d_max, length
-        self.raveled_bbox = np.array([self.i_min, self.i_max,
-                                      self.x_min, self.x_max,
-                                      self.d_min, self.d_max],
-                                     dtype=np.int32)
-
+        self.raveled_bbox = np.array(
+            [self.i_min, self.i_max, self.x_min, self.x_max, self.d_min, self.d_max],
+            dtype=np.int32,
+        )
 
     def from_full_matrix(self, matrix, **kwargs):
-        """ Init from matrix that covers the whole cube. """
-        kwargs = {
-            'i_min': 0,
-            'x_min': 0,
-            **kwargs
-        }
+        """Init from matrix that covers the whole cube."""
+        kwargs = {"i_min": 0, "x_min": 0, **kwargs}
         self.from_matrix(matrix, **kwargs)
 
-
     def from_dict(self, dictionary, transform=True, **kwargs):
-        """ Init from mapping from (iline, xline) to depths. """
+        """Init from mapping from (iline, xline) to depths."""
         _ = kwargs
 
         points = self.dict_to_points(dictionary)
@@ -425,17 +474,29 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
     @staticmethod
     def dict_to_points(dictionary):
-        """ Convert mapping to points array. """
-        points = np.hstack([np.array(list(dictionary.keys())),
-                            np.array(list(dictionary.values())).reshape(-1, 1)])
+        """Convert mapping to points array."""
+        points = np.hstack(
+            [
+                np.array(list(dictionary.keys())),
+                np.array(list(dictionary.values())).reshape(-1, 1),
+            ]
+        )
         return points
 
-
     @staticmethod
-    def from_mask(mask, field=None, origin=None, connectivity=26,
-                  mode='mean', threshold=0.5, minsize=0, prefix='predict',
-                  save_probabilities=False, **kwargs):
-        """ Convert mask to a list of horizons.
+    def from_mask(
+        mask,
+        field=None,
+        origin=None,
+        connectivity=26,
+        mode="mean",
+        threshold=0.5,
+        minsize=0,
+        prefix="predict",
+        save_probabilities=False,
+        **kwargs,
+    ):
+        """Convert mask to a list of horizons.
         Returned list is sorted by length of horizons.
 
         Parameters
@@ -462,13 +523,13 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         """
         _ = kwargs
 
-        if 'mean' in mode:
+        if "mean" in mode:
             group_function = lambda array, _: groupby_mean(array)
-        elif 'min' in mode:
+        elif "min" in mode:
             group_function = lambda array, _: groupby_min(array)
-        elif 'max' in mode:
+        elif "max" in mode:
             group_function = lambda array, _: groupby_max(array)
-        elif 'prob' in mode:
+        elif "prob" in mode:
             group_function = groupby_prob
 
         # Labeled connected regions with an integer
@@ -491,17 +552,23 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
                     points = group_function(coords, values) + origin
 
-                    horizon = Horizon(storage=points, field=field, verify=True, name=f'{prefix}_{i}')
+                    horizon = Horizon(
+                        storage=points, field=field, verify=True, name=f"{prefix}_{i}"
+                    )
 
                     if len(horizon) > 0:
                         horizons.append(horizon)
 
                         if save_probabilities:
-                            values = mask[horizon.points[:, 0] - origin[0],
-                                          horizon.points[:, 1] - origin[1],
-                                          horizon.points[:, 2] - origin[2]]
+                            values = mask[
+                                horizon.points[:, 0] - origin[0],
+                                horizon.points[:, 1] - origin[1],
+                                horizon.points[:, 2] - origin[2],
+                            ]
 
-                            horizon.proba_points = np.vstack([horizon.points[:, 0], horizon.points[:, 1], values]).T
+                            horizon.proba_points = np.vstack(
+                                [horizon.points[:, 0], horizon.points[:, 1], values]
+                            ).T
                             # We save coordinates in the `proba_points` because horizon points can be filtered
                             # and this prevents from inconsistency between points and mask values
 
@@ -509,7 +576,7 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         return horizons
 
     def from_subset(self, matrix, name=None):
-        """ Make new label with points matrix filtered by given presence matrix.
+        """Make new label with points matrix filtered by given presence matrix.
 
         Parameters
         ----------
@@ -532,13 +599,12 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
         return result
 
-
     def make_proportional_horizon(self, other, p, name=None):
-        """ Make a proportional conforming horizon between `self` and `other` in `p` proportion. """
+        """Make a proportional conforming horizon between `self` and `other` in `p` proportion."""
         # pylint: disable=protected-access
         if self.d_mean > other.d_mean:
             self, other = other, self
-        name = name or f'{self.name}_{other.name}__{int(p * 100)}^100'
+        name = name or f"{self.name}_{other.name}__{int(p * 100)}^100"
 
         matrix = self.full_matrix + p * (other.full_matrix - self.full_matrix)
         matrix = np.ceil(matrix)
@@ -546,30 +612,30 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         matrix[other.full_matrix < 0] = self.FILL_VALUE
 
         horizon = Horizon(matrix, field=self.field, name=name)
-        horizon._proportional = {'p': p, 'name_1': self.name, 'name_2': other.name}
+        horizon._proportional = {"p": p, "name_1": self.name, "name_2": other.name}
         return horizon
 
     # Basic properties
     @property
     def shape(self):
-        """ Tuple of horizon dimensions."""
+        """Tuple of horizon dimensions."""
         return (self.i_length, self.x_length)
 
     @property
     def size(self):
-        """ Number of elements in the full horizon matrix."""
+        """Number of elements in the full horizon matrix."""
         return self.i_length * self.x_length
 
     @property
     def short_name(self):
-        """ Name without extension. """
+        """Name without extension."""
         if self.name is not None:
-            return self.name.split('.')[0]
+            return self.name.split(".")[0]
         return None
 
     # Horizon usage: mask generation
     def add_to_mask(self, mask, locations=None, width=3, alpha=1, **kwargs):
-        """ Add horizon to a background.
+        """Add horizon to a background.
         Note that background is changed in-place.
 
         Parameters
@@ -587,74 +653,97 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         low = width // 2
         high = max(width - low, 0)
 
-        mask_bbox = np.array([[slc.start, slc.stop] for slc in locations], dtype=np.int32)
+        mask_bbox = np.array(
+            [[slc.start, slc.stop] for slc in locations], dtype=np.int32
+        )
 
         # Getting coordinates of overlap in cubic system
-        (mask_i_min, mask_i_max), (mask_x_min, mask_x_max), (mask_d_min, mask_d_max) = mask_bbox
+        (mask_i_min, mask_i_max), (mask_x_min, mask_x_max), (mask_d_min, mask_d_max) = (
+            mask_bbox
+        )
 
-        #TODO: add clear explanation about usage of advanced index in Horizon
+        # TODO: add clear explanation about usage of advanced index in Horizon
         i_min, i_max = max(self.i_min, mask_i_min), min(self.i_max + 1, mask_i_max)
         x_min, x_max = max(self.x_min, mask_x_min), min(self.x_max + 1, mask_x_max)
 
         if i_max > i_min and x_max > x_min:
-            overlap = self.matrix[i_min - self.i_min : i_max - self.i_min,
-                                  x_min - self.x_min : x_max - self.x_min]
+            overlap = self.matrix[
+                i_min - self.i_min : i_max - self.i_min,
+                x_min - self.x_min : x_max - self.x_min,
+            ]
 
             # Coordinates of points to use in overlap local system
-            idx_i, idx_x = np.nonzero((overlap != self.FILL_VALUE) &
-                                      (overlap >= mask_d_min + low) &
-                                      (overlap <= mask_d_max - high))
+            idx_i, idx_x = np.nonzero(
+                (overlap != self.FILL_VALUE)
+                & (overlap >= mask_d_min + low)
+                & (overlap <= mask_d_max - high)
+            )
             depths = overlap[idx_i, idx_x]
 
             # Convert coordinates to mask local system
             idx_i += i_min - mask_i_min
             idx_x += x_min - mask_x_min
-            depths -= (mask_d_min + low)
+            depths -= mask_d_min + low
 
             for shift in range(width):
                 mask[idx_i, idx_x, depths + shift] = alpha
 
         return mask
 
-
     def add_to_regression_mask(self, mask, locations, scale=False):
-        """ Add depth matrix at `locations` to `mask`. """
-        mask_bbox = np.array([[slc.start, slc.stop] for slc in locations], dtype=np.int32)
+        """Add depth matrix at `locations` to `mask`."""
+        mask_bbox = np.array(
+            [[slc.start, slc.stop] for slc in locations], dtype=np.int32
+        )
 
         # Getting coordinates of overlap in cubic system
-        (mask_i_min, mask_i_max), (mask_x_min, mask_x_max), (mask_d_min, mask_d_max) = mask_bbox
+        (mask_i_min, mask_i_max), (mask_x_min, mask_x_max), (mask_d_min, mask_d_max) = (
+            mask_bbox
+        )
 
         i_min, i_max = max(self.i_min, mask_i_min), min(self.i_max + 1, mask_i_max)
         x_min, x_max = max(self.x_min, mask_x_min), min(self.x_max + 1, mask_x_max)
 
         if i_max > i_min and x_max > x_min:
-            overlap = self.matrix[i_min - self.i_min : i_max - self.i_min,
-                                  x_min - self.x_min : x_max - self.x_min]
+            overlap = self.matrix[
+                i_min - self.i_min : i_max - self.i_min,
+                x_min - self.x_min : x_max - self.x_min,
+            ]
 
             # Coordinates of points to use in overlap local system
-            idx_i, idx_x = np.asarray((overlap != self.FILL_VALUE) &
-                                      (overlap >= mask_d_min) &
-                                      (overlap <= mask_d_max)).nonzero()
+            idx_i, idx_x = np.asarray(
+                (overlap != self.FILL_VALUE)
+                & (overlap >= mask_d_min)
+                & (overlap <= mask_d_max)
+            ).nonzero()
             depths = overlap[idx_i, idx_x].astype(np.float32)
 
             if scale:
                 depths -= mask_d_min
-                depths /= (mask_d_max - mask_d_min)
+                depths /= mask_d_max - mask_d_min
 
             mask[idx_i, idx_x] = depths
         return mask
 
-
     # Evaluate horizon on its own / against other(s)
     @property
     def metrics(self):
-        """ Calculate :class:`~HorizonMetrics` on demand. """
+        """Calculate :class:`~HorizonMetrics` on demand."""
         # pylint: disable=import-outside-toplevel
         from ...metrics import HorizonMetrics
+
         return HorizonMetrics(self)
 
-    def evaluate(self, compute_metric=True, supports=50, visualize=True, savepath=None, printer=print, **kwargs):
-        """ Compute crucial metrics of a horizon.
+    def evaluate(
+        self,
+        compute_metric=True,
+        supports=50,
+        visualize=True,
+        savepath=None,
+        printer=print,
+        **kwargs,
+    ):
+        """Compute crucial metrics of a horizon.
 
         Parameters
         ----------
@@ -679,16 +768,25 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
         # Visual part
         if compute_metric:
-            from ...metrics import HorizonMetrics # pylint: disable=import-outside-toplevel
+            from ...metrics import (
+                HorizonMetrics,
+            )  # pylint: disable=import-outside-toplevel
+
             if savepath is not None:
-                kwargs['savepath'] = self.field.make_path(savepath, name=self.short_name)
-            return HorizonMetrics(self).evaluate('support_corrs', supports=supports, agg='nanmean',
-                                                 visualize=visualize, **kwargs)
+                kwargs["savepath"] = self.field.make_path(
+                    savepath, name=self.short_name
+                )
+            return HorizonMetrics(self).evaluate(
+                "support_corrs",
+                supports=supports,
+                agg="nanmean",
+                visualize=visualize,
+                **kwargs,
+            )
         return None
 
-
     def check_proximity(self, other):
-        """ Compute a number of stats of location of `self` relative to the `other` Horizons.
+        """Compute a number of stats of location of `self` relative to the `other` Horizons.
 
         Parameters
         ----------
@@ -706,73 +804,103 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
             - `window_rate` for percentage of traces that are in 5ms from one horizon to the other
         """
         # Compute diffs
-        difference = np.where((self.full_matrix != self.FILL_VALUE) & (other.full_matrix != self.FILL_VALUE),
-                              self.full_matrix - other.full_matrix, np.nan)
+        difference = np.where(
+            (self.full_matrix != self.FILL_VALUE)
+            & (other.full_matrix != self.FILL_VALUE),
+            self.full_matrix - other.full_matrix,
+            np.nan,
+        )
 
         mask = ~np.isnan(difference)
         overlap_size = np.sum(mask)
         masked_difference = difference[mask]
         masked_abs_difference = np.abs(masked_difference)
-        window_rate = np.sum(masked_abs_difference < (5 / self.field.sample_interval)) / overlap_size
+        window_rate = (
+            np.sum(masked_abs_difference < (5 / self.field.sample_interval))
+            / overlap_size
+        )
 
-        present_at_1_absent_at_2 = ((self.full_matrix != self.FILL_VALUE)
-                                    & (other.full_matrix == self.FILL_VALUE)).sum()
-        present_at_2_absent_at_1 = ((self.full_matrix == self.FILL_VALUE)
-                                    & (other.full_matrix != self.FILL_VALUE)).sum()
+        present_at_1_absent_at_2 = (
+            (self.full_matrix != self.FILL_VALUE)
+            & (other.full_matrix == self.FILL_VALUE)
+        ).sum()
+        present_at_2_absent_at_1 = (
+            (self.full_matrix == self.FILL_VALUE)
+            & (other.full_matrix != self.FILL_VALUE)
+        ).sum()
 
         if masked_difference.size == 0:
-            masked_difference = masked_abs_difference = np.array([np.nan], dtype=np.float32)
+            masked_difference = masked_abs_difference = np.array(
+                [np.nan], dtype=np.float32
+            )
 
         info_dict = {
-            'difference_matrix' : difference,
-            'difference_mean' : np.mean(masked_difference),
-            'difference_max' : np.max(masked_difference),
-            'difference_min' : np.min(masked_difference),
-            'difference_std' : np.std(masked_difference),
-
-            'abs_difference_mean' : np.mean(masked_abs_difference),
-            'abs_difference_max' : np.max(masked_abs_difference),
-            'abs_difference_std' : np.std(masked_abs_difference),
-
-            'accuracy@0': np.mean(masked_abs_difference == 0),
-            'accuracy@1': np.mean(masked_abs_difference <= 1),
-            'accuracy@2': np.mean(masked_abs_difference <= 2),
-
-            'overlap_size': overlap_size,
-            'overlap_coverage': overlap_size / self.field.n_alive_traces,
-            'window_rate':  window_rate,
-
-            'present_at_1_absent_at_2' : present_at_1_absent_at_2,
-            'present_at_2_absent_at_1' : present_at_2_absent_at_1,
+            "difference_matrix": difference,
+            "difference_mean": np.mean(masked_difference),
+            "difference_max": np.max(masked_difference),
+            "difference_min": np.min(masked_difference),
+            "difference_std": np.std(masked_difference),
+            "abs_difference_mean": np.mean(masked_abs_difference),
+            "abs_difference_max": np.max(masked_abs_difference),
+            "abs_difference_std": np.std(masked_abs_difference),
+            "accuracy@0": np.mean(masked_abs_difference == 0),
+            "accuracy@1": np.mean(masked_abs_difference <= 1),
+            "accuracy@2": np.mean(masked_abs_difference <= 2),
+            "overlap_size": overlap_size,
+            "overlap_coverage": overlap_size / self.field.n_alive_traces,
+            "window_rate": window_rate,
+            "present_at_1_absent_at_2": present_at_1_absent_at_2,
+            "present_at_2_absent_at_1": present_at_2_absent_at_1,
         }
-        info_dict = {key : round(value, 4) if isinstance(value, (float, np.floating)) else value
-                     for key, value in info_dict.items()}
+        info_dict = {
+            key: round(value, 4) if isinstance(value, (float, np.floating)) else value
+            for key, value in info_dict.items()
+        }
         return MetaDict(info_dict)
 
     def find_closest(self, *others):
-        """ Find closest horizon to `self` in the list of `others`. """
-        proximities = [(other, self.check_proximity(other)) for other in others
-                       if other.field.name == self.field.name]
+        """Find closest horizon to `self` in the list of `others`."""
+        proximities = [
+            (other, self.check_proximity(other))
+            for other in others
+            if other.field.name == self.field.name
+        ]
 
-        closest, proximity_info = min(proximities, key=lambda item: item[1].get('abs_difference_mean', np.inf))
+        closest, proximity_info = min(
+            proximities, key=lambda item: item[1].get("abs_difference_mean", np.inf)
+        )
         return closest, proximity_info
 
     # Alias for horizon comparisons
-    def compare(self, *others, clip_value=5, ignore_zeros=True,
-                printer=print, visualize=True, hist_kwargs=None, **kwargs):
-        """ Alias for `HorizonMetrics.compare`. """
-        return self.metrics.compare(*others, clip_value=clip_value, ignore_zeros=ignore_zeros,
-                                    printer=printer, visualize=visualize, hist_kwargs=hist_kwargs, **kwargs)
+    def compare(
+        self,
+        *others,
+        clip_value=5,
+        ignore_zeros=True,
+        printer=print,
+        visualize=True,
+        hist_kwargs=None,
+        **kwargs,
+    ):
+        """Alias for `HorizonMetrics.compare`."""
+        return self.metrics.compare(
+            *others,
+            clip_value=clip_value,
+            ignore_zeros=ignore_zeros,
+            printer=printer,
+            visualize=visualize,
+            hist_kwargs=hist_kwargs,
+            **kwargs,
+        )
 
     def compute_prediction_std(self, others):
-        """ Compute std of predicted horizons along depths and restrict it to `self`. """
+        """Compute std of predicted horizons along depths and restrict it to `self`."""
         std_matrix = self.metrics.compute_prediction_std(list(set([self, *others])))
-        std_matrix[self.mask == False] = np.nan #pylint: disable=singleton-comparison
+        std_matrix[self.mask == False] = np.nan  # pylint: disable=singleton-comparison
         return std_matrix
 
-
     def equal(self, other, threshold_missing=0):
-        """ Return True if the horizons are considered equal, False otherwise.
+        """Return True if the horizons are considered equal, False otherwise.
         If the `threshold_missing` is zero, then check if the points of `self` and `other` are the same.
         If the `threshold_missing` is positive, then check that in overlapping points values are the same,
         and number of missing traces is smaller than allowed.
@@ -781,12 +909,14 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
             return np.array_equal(self.points, other.points)
 
         info = self.check_proximity(other)
-        n_missing = max(info['present_at_1_absent_at_2'], info['present_at_2_absent_at_1'])
-        return info['difference_mean'] == 0 and n_missing < threshold_missing
+        n_missing = max(
+            info["present_at_1_absent_at_2"], info["present_at_2_absent_at_1"]
+        )
+        return info["difference_mean"] == 0 and n_missing < threshold_missing
 
     # Merging
-    def merge_points(self, others, mode='mean', inplace=True, add_prefix=True):
-        """ Merge horizon with `others`.
+    def merge_points(self, others, mode="mean", inplace=True, add_prefix=True):
+        """Merge horizon with `others`.
 
         Parameters
         ----------
@@ -797,11 +927,11 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         if not isinstance(others, (list, tuple)):
             others = [others]
 
-        if 'mean' in mode:
+        if "mean" in mode:
             group_function = groupby_mean
-        elif 'min' in mode:
+        elif "min" in mode:
             group_function = groupby_min
-        elif 'max' in mode:
+        elif "max" in mode:
             group_function = groupby_max
 
         points = np.vstack((self.points, *(other.points for other in others)))
@@ -811,15 +941,17 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
         if inplace:
             self.points = points
-            self.reset_storage('matrix')
+            self.reset_storage("matrix")
             return self
 
         name = f"concated_{self.name}" if add_prefix else self.name
         return type(self)(storage=points, field=self.field, name=name)
 
     # Save horizon to disk
-    def dump_sqb(self, data, path, format='points', transform=None, name=None, attributes=None):
-        """ Dump horizon points to SQB storage.
+    def dump_sqb(
+        self, data, path, format="points", transform=None, name=None, attributes=None
+    ):
+        """Dump horizon points to SQB storage.
         If `attributes` are provided, then saves additional instance attributes in the storage,
         which will be re-loaded at opening.
         """
@@ -832,18 +964,29 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
         points = data if transform is None else transform(data)
 
         storage = SQBStorage(path)
-        storage.update({
-            'type': 'horizon',
-            'points': points,
-            'original_path': self.path,
-            'field_path': self.field.path,
-            'attributes': attributes,
-            **{key : getattr(self, key) for key in attributes},
-        })
+        storage.update(
+            {
+                "type": "horizon",
+                "points": points,
+                "original_path": self.path,
+                "field_path": self.field.path,
+                "attributes": attributes,
+                **{key: getattr(self, key) for key in attributes},
+            }
+        )
 
-    def dump(self, path, format='char', transform=None, attributes=None, smooth_out=False,
-             kernel_size=7, sigma=2., max_depth_difference=5):
-        """ Save horizon points on disk.
+    def dump(
+        self,
+        path,
+        format="char",
+        transform=None,
+        attributes=None,
+        smooth_out=False,
+        kernel_size=7,
+        sigma=2.0,
+        max_depth_difference=5,
+    ):
+        """Save horizon points on disk.
 
         Parameters
         ----------
@@ -876,21 +1019,54 @@ class Horizon(AttributesMixin, CacheMixin, CharismaMixin, ExtractionMixin, Proce
 
         # Apply smoothing
         if smooth_out:
-            horizon = self.smooth_out(mode='convolve', kernel_size=kernel_size, sigma_spatial=sigma,
-                                      max_depth_difference=max_depth_difference, inplace=False, dtype=np.float32)
+            horizon = self.smooth_out(
+                mode="convolve",
+                kernel_size=kernel_size,
+                sigma_spatial=sigma,
+                max_depth_difference=max_depth_difference,
+                inplace=False,
+                dtype=np.float32,
+            )
         else:
             horizon = self
 
         # Dump
-        if format.startswith('c'):
-            horizon.dump_charisma(data=horizon.points.copy(), path=path, name=self.name,
-                                  format='points', transform=transform)
+        if format.startswith("c"):
+            horizon.dump_charisma(
+                data=horizon.points.copy(),
+                path=path,
+                name=self.name,
+                format="points",
+                transform=transform,
+            )
         else:
-            horizon.dump_sqb(data=horizon.points.copy(), path=path, name=self.name,
-                             format='points', transform=transform, attributes=attributes)
+            horizon.dump_sqb(
+                data=horizon.points.copy(),
+                path=path,
+                name=self.name,
+                format="points",
+                transform=transform,
+                attributes=attributes,
+            )
 
-    def dump_float(self, path, format='char', transform=None, attributes=None,
-                   kernel_size=7, sigma=2., max_depth_difference=5):
-        """ An alias to :meth:`.dump` with turned on smoothing by default. """
-        self.dump(path=path, format=format, transform=transform, smooth_out=True, attributes=attributes,
-                  kernel_size=kernel_size, sigma=sigma, max_depth_difference=max_depth_difference)
+    def dump_float(
+        self,
+        path,
+        format="char",
+        transform=None,
+        attributes=None,
+        kernel_size=7,
+        sigma=2.0,
+        max_depth_difference=5,
+    ):
+        """An alias to :meth:`.dump` with turned on smoothing by default."""
+        self.dump(
+            path=path,
+            format=format,
+            transform=transform,
+            smooth_out=True,
+            attributes=attributes,
+            kernel_size=kernel_size,
+            sigma=sigma,
+            max_depth_difference=max_depth_difference,
+        )

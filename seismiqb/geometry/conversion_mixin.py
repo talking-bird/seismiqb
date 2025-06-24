@@ -1,4 +1,5 @@
-""" Mixin for geometry conversions. """
+"""Mixin for geometry conversions."""
+
 import os
 
 import cv2
@@ -10,7 +11,7 @@ from batchflow import Notifier, Quantizer
 
 
 def resize_3D(array, factor):
-    """ Resize 3D array along the last axis. """
+    """Resize 3D array along the last axis."""
     resampled_depth = int(array.shape[2] * factor)
     buffer = np.empty(shape=(*array.shape[:2], resampled_depth), dtype=array.dtype)
 
@@ -19,26 +20,47 @@ def resize_3D(array, factor):
     return buffer
 
 
-
 class ConversionMixin:
-    """ Methods for converting data to other formats. """
-    #pylint: disable=redefined-builtin, import-outside-toplevel
-    PROJECTION_NAMES = {0: 'projection_i', 1: 'projection_x', 2: 'projection_d'}    # names of projections
-    TO_PROJECTION_TRANSPOSITION = {0: [0, 1, 2], 1: [1, 0, 2], 2: [2, 0, 1]}        # re-order axis to given projection
-    FROM_PROJECTION_TRANSPOSITION = {0: [0, 1, 2], 1: [1, 0, 2], 2: [1, 2, 0]}      # revert the previous re-ordering
+    """Methods for converting data to other formats."""
+
+    # pylint: disable=redefined-builtin, import-outside-toplevel
+    PROJECTION_NAMES = {
+        0: "projection_i",
+        1: "projection_x",
+        2: "projection_d",
+    }  # names of projections
+    TO_PROJECTION_TRANSPOSITION = {
+        0: [0, 1, 2],
+        1: [1, 0, 2],
+        2: [2, 0, 1],
+    }  # re-order axis to given projection
+    FROM_PROJECTION_TRANSPOSITION = {
+        0: [0, 1, 2],
+        1: [1, 0, 2],
+        2: [1, 2, 0],
+    }  # revert the previous re-ordering
 
     @staticmethod
     def compute_axis_transpositions(axis):
-        """ Compute transpositions of original (inline, crossline, depth) axes to a given projection.
+        """Compute transpositions of original (inline, crossline, depth) axes to a given projection.
         Returns a transposition to that projection and from it.
         """
-        return ConversionMixin.TO_PROJECTION_TRANSPOSITION[axis], ConversionMixin.FROM_PROJECTION_TRANSPOSITION[axis]
-
+        return (
+            ConversionMixin.TO_PROJECTION_TRANSPOSITION[axis],
+            ConversionMixin.FROM_PROJECTION_TRANSPOSITION[axis],
+        )
 
     # Quantization
-    def compute_quantization_parameters(self, ranges=0.99, clip=True, center=False, dtype=np.int8,
-                                        n_quantile_traces=100_000, seed=42):
-        """ Compute parameters, needed for quantizing data to required range.
+    def compute_quantization_parameters(
+        self,
+        ranges=0.99,
+        clip=True,
+        center=False,
+        dtype=np.int8,
+        n_quantile_traces=100_000,
+        seed=42,
+    ):
+        """Compute parameters, needed for quantizing data to required range.
         Also evaluates quantization error by comparing subset of data with its dequantized quantized version.
         On the same subset, stats like mean, std and quantile values are computed.
 
@@ -70,11 +92,15 @@ class ConversionMixin:
         if center:
             ranges = tuple(item - self.v_mean for item in ranges)
 
-        quantizer = Quantizer(ranges=ranges, clip=clip, center=center, mean=self.mean, dtype=dtype)
+        quantizer = Quantizer(
+            ranges=ranges, clip=clip, center=center, mean=self.mean, dtype=dtype
+        )
 
         # Load subset of data to compute quantiles
         alive_traces_indices = self.index_matrix[~self.dead_traces_matrix].ravel()
-        indices = np.random.default_rng(seed=seed).choice(alive_traces_indices, size=n_quantile_traces)
+        indices = np.random.default_rng(seed=seed).choice(
+            alive_traces_indices, size=n_quantile_traces
+        )
         data = self.load_by_indices(indices)
         quantized_data = quantizer.quantize(data)
 
@@ -87,23 +113,36 @@ class ConversionMixin:
         quantization_error = np.mean(np.abs(dequantized_data - data)) / self.std
 
         return {
-            'ranges': quantizer.ranges, 'center': quantizer.center, 'clip': clip,
-
-            'quantizer': quantizer,
-            'transform': quantizer.quantize,
-            'dequantize': quantizer.dequantize,
-            'quantization_error': quantization_error,
-
-            'min': -127, 'max': +127,
-            'mean': mean, 'std': std,
-            'quantile_values': quantile_values,
+            "ranges": quantizer.ranges,
+            "center": quantizer.center,
+            "clip": clip,
+            "quantizer": quantizer,
+            "transform": quantizer.quantize,
+            "dequantize": quantizer.dequantize,
+            "quantization_error": quantization_error,
+            "min": -127,
+            "max": +127,
+            "mean": mean,
+            "std": std,
+            "quantile_values": quantile_values,
         }
 
     # Convert SEG-Y
-    def convert_to_hdf5(self, path=None, overwrite=True, postfix=False, projections='ixd',
-                        quantize=False, quantization_parameters=None, dataset_kwargs=None, chunk_size_divisor=1,
-                        pbar='t', store_meta=True, **kwargs):
-        """ Convert SEG-Y file to a more effective storage.
+    def convert_to_hdf5(
+        self,
+        path=None,
+        overwrite=True,
+        postfix=False,
+        projections="ixd",
+        quantize=False,
+        quantization_parameters=None,
+        dataset_kwargs=None,
+        chunk_size_divisor=1,
+        pbar="t",
+        store_meta=True,
+        **kwargs,
+    ):
+        """Convert SEG-Y file to a more effective storage.
 
         Parameters
         ----------
@@ -135,27 +174,34 @@ class ConversionMixin:
         if quantize:
             if quantization_parameters is None:
                 quantization_parameters = self.compute_quantization_parameters()
-            dtype, transform = np.int8, quantization_parameters['transform']
+            dtype, transform = np.int8, quantization_parameters["transform"]
         else:
             dtype, transform = np.float32, lambda array: array
 
         # Default path: right next to the original file with new extension
         if path is None:
-            path = self.make_output_path(format='hdf5', quantize=quantize, postfix=postfix, projections=projections,
-                                         chunk_size_divisor=chunk_size_divisor)
+            path = self.make_output_path(
+                format="hdf5",
+                quantize=quantize,
+                postfix=postfix,
+                projections=projections,
+                chunk_size_divisor=chunk_size_divisor,
+            )
 
         # Dataset creation parameters
         if dataset_kwargs is None:
-            dataset_kwargs = dict(hdf5plugin.Blosc(cname='lz4hc', clevel=6, shuffle=0))
+            dataset_kwargs = dict(hdf5plugin.Blosc(cname="lz4hc", clevel=6, shuffle=0))
 
         # Remove file, if exists
         if os.path.exists(path) and overwrite:
             os.remove(path)
 
         # Create file and datasets inside
-        with h5py.File(path, mode='w-', **kwargs) as file:
-            total = sum((letter in projections) * self.shape[idx]
-                        for idx, letter in enumerate('ixd'))
+        with h5py.File(path, mode="w-", **kwargs) as file:
+            total = sum(
+                (letter in projections) * self.shape[idx]
+                for idx, letter in enumerate("ixd")
+            )
             progress_bar = Notifier(pbar, total=total, ncols=110)
             name = os.path.basename(path)
 
@@ -167,13 +213,19 @@ class ConversionMixin:
                 projection_shape = self.shape[projection_transposition]
 
                 # Create dataset
-                dataset_kwargs_ = {'chunks': (1, *projection_shape[1:] // chunk_size_divisor),
-                                   **dataset_kwargs}
-                projection = file.create_dataset(projection_name, shape=projection_shape, dtype=dtype,
-                                                 **dataset_kwargs_)
+                dataset_kwargs_ = {
+                    "chunks": (1, *projection_shape[1:] // chunk_size_divisor),
+                    **dataset_kwargs,
+                }
+                projection = file.create_dataset(
+                    projection_name,
+                    shape=projection_shape,
+                    dtype=dtype,
+                    **dataset_kwargs_,
+                )
 
                 # Write data on disk
-                progress_bar.set_description(f'Converting to {name}:{p}')
+                progress_bar.set_description(f"Converting to {name}:{p}")
                 for idx in range(self.shape[axis]):
                     slide = self.load_slide(idx, axis=axis)
                     slide = transform(slide)
@@ -184,21 +236,45 @@ class ConversionMixin:
 
         # Save meta to the same file. If quantized, replace stats with the correct ones
         from .base import Geometry
+
         geometry = Geometry.new(path)
 
         if store_meta:
             self.dump_meta(path=path)
 
             if quantize:
-                quantization_parameters['quantization_ranges'] = quantization_parameters['ranges']
-                for key in ['quantization_ranges', 'center', 'clip', 'quantization_error',
-                            'min', 'max', 'mean', 'std', 'quantile_values']:
-                    geometry.meta_storage.store_item(key=key, value=quantization_parameters[key], overwrite=True)
+                quantization_parameters["quantization_ranges"] = (
+                    quantization_parameters["ranges"]
+                )
+                for key in [
+                    "quantization_ranges",
+                    "center",
+                    "clip",
+                    "quantization_error",
+                    "min",
+                    "max",
+                    "mean",
+                    "std",
+                    "quantile_values",
+                ]:
+                    geometry.meta_storage.store_item(
+                        key=key, value=quantization_parameters[key], overwrite=True
+                    )
         return geometry
 
-    def repack_segy(self, path=None, format=8, transform=None, quantization_parameters=None,
-                    chunk_size=25_000, max_workers=4, pbar='t', store_meta=True, overwrite=True):
-        """ Repack SEG-Y file with a different `format`: dtype of data values.
+    def repack_segy(
+        self,
+        path=None,
+        format=8,
+        transform=None,
+        quantization_parameters=None,
+        chunk_size=25_000,
+        max_workers=4,
+        pbar="t",
+        store_meta=True,
+        overwrite=True,
+    ):
+        """Repack SEG-Y file with a different `format`: dtype of data values.
         Keeps the same binary header (except for the 3225 byte, which stores the format).
         Keeps the same header values for each trace: essentially, only the values of each trace are changed.
 
@@ -230,62 +306,97 @@ class ConversionMixin:
             Whether to overwrite existing `path` or raise an exception. Also removes `meta` files.
         """
         if format == 8 and transform is None:
-            quantization_parameters = quantization_parameters or self.compute_quantization_parameters()
-            transform = quantization_parameters['transform']
+            quantization_parameters = (
+                quantization_parameters or self.compute_quantization_parameters()
+            )
+            transform = quantization_parameters["transform"]
 
-        path = self.loader.convert(path=path, format=format, transform=transform,
-                                   chunk_size=chunk_size, max_workers=max_workers, pbar=pbar, overwrite=overwrite)
+        path = self.loader.convert(
+            path=path,
+            format=format,
+            transform=transform,
+            chunk_size=chunk_size,
+            max_workers=max_workers,
+            pbar=pbar,
+            overwrite=overwrite,
+        )
 
-        meta_path = path + '_meta'
+        meta_path = path + "_meta"
         if overwrite and os.path.exists(meta_path):
             os.remove(meta_path)
 
         # Re-open geometry, store values that were used for quantization
         from .base import Geometry
+
         geometry = Geometry.new(path, collect_stats=True)
 
-        quantization_parameters['quantization_ranges'] = quantization_parameters['ranges']
-        for key in ['quantization_ranges', 'center', 'clip', 'quantization_error']:
-            geometry.meta_storage.store_item(key=key, value=quantization_parameters[key], overwrite=True)
+        quantization_parameters["quantization_ranges"] = quantization_parameters[
+            "ranges"
+        ]
+        for key in ["quantization_ranges", "center", "clip", "quantization_error"]:
+            geometry.meta_storage.store_item(
+                key=key, value=quantization_parameters[key], overwrite=True
+            )
         return geometry
 
-
-    def make_output_path(self, format='hdf5', quantize=False, postfix=False, projections='ixd',
-                         chunk_size_divisor=1, sgy_format=8):
-        """ Compute output path for converted file, based on conversion parameters. """
+    def make_output_path(
+        self,
+        format="hdf5",
+        quantize=False,
+        postfix=False,
+        projections="ixd",
+        chunk_size_divisor=1,
+        sgy_format=8,
+    ):
+        """Compute output path for converted file, based on conversion parameters."""
         format = format.lower()
 
-        if format.startswith('q'):
+        if format.startswith("q"):
             quantize = True
             format = format[1:]
 
-        fmt_prefix = 'q' if quantize else ''
+        fmt_prefix = "q" if quantize else ""
 
         if not isinstance(postfix, str):
             if not postfix:
-                postfix = ''
+                postfix = ""
             else:
-                if format == 'hdf5':
+                if format == "hdf5":
                     if len(projections) < 3:
-                        postfix = '_' + projections
+                        postfix = "_" + projections
                     if chunk_size_divisor != 1:
-                        postfix = '_' + f'c{chunk_size_divisor}'
+                        postfix = "_" + f"c{chunk_size_divisor}"
 
-                if format == 'sgy':
+                if format == "sgy":
                     if quantize:
-                        postfix = '_' + f'f{sgy_format}'
+                        postfix = "_" + f"f{sgy_format}"
 
         dirname = os.path.dirname(self.path)
         basename = os.path.basename(self.path)
         shortname = os.path.splitext(basename)[0]
-        path = os.path.join(dirname, shortname + postfix + '.' + fmt_prefix + format)
+        path = os.path.join(dirname, shortname + postfix + "." + fmt_prefix + format)
         return path
 
-
-    def convert(self, format='qsgy', path=None, postfix=False, projections='ixd', overwrite=True,
-                quantize=False, quantization_parameters=None, dataset_kwargs=None, chunk_size_divisor=1,
-                pbar='t', store_meta=True, sgy_format=8, transform=None, chunk_size=25_000, max_workers=4, **kwargs):
-        """ Convert SEG-Y file to a more effective storage.
+    def convert(
+        self,
+        format="qsgy",
+        path=None,
+        postfix=False,
+        projections="ixd",
+        overwrite=True,
+        quantize=False,
+        quantization_parameters=None,
+        dataset_kwargs=None,
+        chunk_size_divisor=1,
+        pbar="t",
+        store_meta=True,
+        sgy_format=8,
+        transform=None,
+        chunk_size=25_000,
+        max_workers=4,
+        **kwargs,
+    ):
+        """Convert SEG-Y file to a more effective storage.
         Automatically select the conversion format, based on `format` parameter.
         Available formats are {'hdf5', 'qhdf5', 'qsgy}.
 
@@ -294,34 +405,63 @@ class ConversionMixin:
         """
         format = format.lower()
 
-        if format.startswith('q'):
+        if format.startswith("q"):
             quantize = True
             format = format[1:]
 
         if path is None:
-            path = self.make_output_path(format=format, postfix=postfix, quantize=quantize, projections=projections,
-                                         chunk_size_divisor=chunk_size_divisor, sgy_format=sgy_format)
+            path = self.make_output_path(
+                format=format,
+                postfix=postfix,
+                quantize=quantize,
+                projections=projections,
+                chunk_size_divisor=chunk_size_divisor,
+                sgy_format=sgy_format,
+            )
 
         # Actual conversion
-        if 'hdf5' in format:
-            geometry = self.convert_to_hdf5(path=path, overwrite=overwrite, projections=projections,
-                                            quantize=quantize, quantization_parameters=quantization_parameters,
-                                            dataset_kwargs=dataset_kwargs, chunk_size_divisor=chunk_size_divisor,
-                                            pbar=pbar, store_meta=store_meta)
-        elif 'sgy' in format and quantize:
-            geometry = self.repack_segy(path=path, overwrite=overwrite, format=sgy_format,
-                                        transform=transform, quantization_parameters=quantization_parameters,
-                                        chunk_size=chunk_size, max_workers=max_workers, pbar=pbar)
+        if "hdf5" in format:
+            geometry = self.convert_to_hdf5(
+                path=path,
+                overwrite=overwrite,
+                projections=projections,
+                quantize=quantize,
+                quantization_parameters=quantization_parameters,
+                dataset_kwargs=dataset_kwargs,
+                chunk_size_divisor=chunk_size_divisor,
+                pbar=pbar,
+                store_meta=store_meta,
+            )
+        elif "sgy" in format and quantize:
+            geometry = self.repack_segy(
+                path=path,
+                overwrite=overwrite,
+                format=sgy_format,
+                transform=transform,
+                quantization_parameters=quantization_parameters,
+                chunk_size=chunk_size,
+                max_workers=max_workers,
+                pbar=pbar,
+            )
         else:
-            raise ValueError(f'Unknown/unsupported combination of format={format} and quantize={quantize}!')
+            raise ValueError(
+                f"Unknown/unsupported combination of format={format} and quantize={quantize}!"
+            )
 
         return geometry
 
-
     # Resample SEG-Y
-    def resample(self, path=None, factor=2, quantize=True, quantization_parameters=None, pbar='t',
-                 overwrite=True, **kwargs):
-        """ Resample SEG-Y file along the depth dimension with optional quantization.
+    def resample(
+        self,
+        path=None,
+        factor=2,
+        quantize=True,
+        quantization_parameters=None,
+        pbar="t",
+        overwrite=True,
+        **kwargs,
+    ):
+        """Resample SEG-Y file along the depth dimension with optional quantization.
 
         Parameters
         ----------
@@ -342,12 +482,16 @@ class ConversionMixin:
             Whether to overwrite existing `path` or raise an exception. Also removes `meta` files.
         """
         # Path
-        path = path or self.make_output_path('sgy', quantize=quantize, postfix=f'_r{factor}')
+        path = path or self.make_output_path(
+            "sgy", quantize=quantize, postfix=f"_r{factor}"
+        )
 
         # Quantization parameters
         if quantize and not self.quantized:
-            quantization_parameters = quantization_parameters or self.compute_quantization_parameters()
-            quantization_transform = quantization_parameters['transform']
+            quantization_parameters = (
+                quantization_parameters or self.compute_quantization_parameters()
+            )
+            quantization_transform = quantization_parameters["transform"]
         else:
             quantization_transform = lambda array: array
 
@@ -358,21 +502,36 @@ class ConversionMixin:
         spec.format = 8 if quantize else 5
 
         # Final data transform: resample and optional quantization
-        transform = lambda array: quantization_transform(resize_3D(array, factor=factor))
+        transform = lambda array: quantization_transform(
+            resize_3D(array, factor=factor)
+        )
 
-        self.array_to_segy(self, path=path, spec=spec, transform=transform, format=spec.format,
-                        pbar=pbar, zip_segy=False, **kwargs)
+        self.array_to_segy(
+            self,
+            path=path,
+            spec=spec,
+            transform=transform,
+            format=spec.format,
+            pbar=pbar,
+            zip_segy=False,
+            **kwargs,
+        )
 
         # Re-open geometry, store values that were used for quantization
-        meta_path = path + '_meta'
+        meta_path = path + "_meta"
         if overwrite and os.path.exists(meta_path):
             os.remove(meta_path)
 
         from .base import Geometry
+
         geometry = Geometry.new(path, collect_stats=True)
 
         if quantize and not self.quantized:
-            quantization_parameters['quantization_ranges'] = quantization_parameters['ranges']
-            for key in ['quantization_ranges', 'center', 'clip', 'quantization_error']:
-                geometry.meta_storage.store_item(key=key, value=quantization_parameters[key], overwrite=True)
+            quantization_parameters["quantization_ranges"] = quantization_parameters[
+                "ranges"
+            ]
+            for key in ["quantization_ranges", "center", "clip", "quantization_error"]:
+                geometry.meta_storage.store_item(
+                    key=key, value=quantization_parameters[key], overwrite=True
+                )
         return geometry

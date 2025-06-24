@@ -1,33 +1,37 @@
-""" Metrics for denoising seismic data. """
+"""Metrics for denoising seismic data."""
+
 import numpy as np
 from scipy import fftpack
 
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
 
 try:
-    from torchmetrics.functional import structural_similarity_index_measure,\
-                                        peak_signal_noise_ratio, mean_squared_error,\
-                                        error_relative_global_dimensionless_synthesis, universal_image_quality_index
+    from torchmetrics.functional import (
+        structural_similarity_index_measure,
+        peak_signal_noise_ratio,
+        mean_squared_error,
+        error_relative_global_dimensionless_synthesis,
+        universal_image_quality_index,
+    )
+
     METRICS = {
-        'ssim': structural_similarity_index_measure,
-        'psnr': peak_signal_noise_ratio,
-        'ergas': error_relative_global_dimensionless_synthesis,
-        'uqi': universal_image_quality_index,
-        'mse': mean_squared_error
+        "ssim": structural_similarity_index_measure,
+        "psnr": peak_signal_noise_ratio,
+        "ergas": error_relative_global_dimensionless_synthesis,
+        "uqi": universal_image_quality_index,
+        "mse": mean_squared_error,
     }
 except ImportError:
     METRICS = {}
 
 
-
-
-
-def compute_similarity_metric(array1, array2, metrics='all'):
-    """ Compute similarity metrics for a pair of images.
+def compute_similarity_metric(array1, array2, metrics="all"):
+    """Compute similarity metrics for a pair of images.
 
     Parameters
     ----------
@@ -46,15 +50,15 @@ def compute_similarity_metric(array1, array2, metrics='all'):
     dict
         Dictionary with metric names as keys and computed metrics as values.
     """
-    #pylint: disable=not-a-mapping
+    # pylint: disable=not-a-mapping
     if not TORCH_AVAILABLE:
-        raise ImportError('Install `torch` library!')
+        raise ImportError("Install `torch` library!")
     if not METRICS:
-        raise ImportError('Install `torchmetrics` library!')
+        raise ImportError("Install `torchmetrics` library!")
 
     # Parse `metrics`
-    if metrics == 'all':
-        metrics =  list(METRICS.keys())
+    if metrics == "all":
+        metrics = list(METRICS.keys())
     if isinstance(metrics, str):
         metrics = [metrics]
     if isinstance(metrics, (tuple, list)):
@@ -62,7 +66,7 @@ def compute_similarity_metric(array1, array2, metrics='all'):
 
     for metric_name in metrics.keys():
         if metric_name not in METRICS:
-            raise ValueError(f'Incorrect metric name `{metric_name}`!')
+            raise ValueError(f"Incorrect metric name `{metric_name}`!")
 
     # Convert arrays to tensors. TODO: do that only when the metric requires
     array1, array2 = torch.Tensor(array1), torch.Tensor(array2)
@@ -70,13 +74,14 @@ def compute_similarity_metric(array1, array2, metrics='all'):
     returns = {}
     for metric_name, metric_kwargs in metrics.items():
         result = METRICS[metric_name](array1, array2, **metric_kwargs)
-        returns[metric_name] = result.item() if isinstance(result, torch.Tensor) else result
+        returns[metric_name] = (
+            result.item() if isinstance(result, torch.Tensor) else result
+        )
     return returns
 
 
-
-def local_correlation_map(image, prediction, map_to='pred', window_size=9, n_dims=1):
-    """ Local correlation map between an image and estimated noise.
+def local_correlation_map(image, prediction, map_to="pred", window_size=9, n_dims=1):
+    """Local correlation map between an image and estimated noise.
 
     Parameters
     ----------
@@ -94,20 +99,27 @@ def local_correlation_map(image, prediction, map_to='pred', window_size=9, n_dim
     image = image.squeeze()
     prediction = prediction.squeeze()
     image_noise = np.abs(image - prediction)
-    image = image if map_to == 'image' else prediction
+    image = image if map_to == "image" else prediction
     img_shape = image.shape
 
     # "same" padding along trace for 1d window or both dims for 2d
     pad = window_size // 2
-    pad_width = [[pad, window_size - (1 + pad)], [pad * (n_dims - 1), (window_size - (1 + pad)) * (n_dims - 1)]]
+    pad_width = [
+        [pad, window_size - (1 + pad)],
+        [pad * (n_dims - 1), (window_size - (1 + pad)) * (n_dims - 1)],
+    ]
 
-    image = np.pad(image, pad_width=pad_width, mode='mean')
-    image_noise = np.pad(image_noise, pad_width=pad_width, mode='mean')
+    image = np.pad(image, pad_width=pad_width, mode="mean")
+    image_noise = np.pad(image_noise, pad_width=pad_width, mode="mean")
 
     # Vectorization
-    window_shape=[window_size, window_size if n_dims == 2 else 1]
-    image_view = np.lib.stride_tricks.sliding_window_view(image, window_shape=window_shape)
-    image_noise_view = np.lib.stride_tricks.sliding_window_view(image_noise, window_shape=window_shape)
+    window_shape = [window_size, window_size if n_dims == 2 else 1]
+    image_view = np.lib.stride_tricks.sliding_window_view(
+        image, window_shape=window_shape
+    )
+    image_noise_view = np.lib.stride_tricks.sliding_window_view(
+        image_noise, window_shape=window_shape
+    )
 
     straighten = (np.dot(*image_view.shape[:2]), np.dot(*image_view.shape[2:]))
     image_view = image_view.reshape(straighten)
@@ -116,17 +128,20 @@ def local_correlation_map(image, prediction, map_to='pred', window_size=9, n_dim
     pearson = _pearson_corr_2d(image_view, image_noise_view).reshape(img_shape)
     return np.nan_to_num(pearson)
 
+
 def _pearson_corr_2d(x, y):
-    """ Squared Pearson correlation coefficient between corresponding rows of 2d input arrays. """
+    """Squared Pearson correlation coefficient between corresponding rows of 2d input arrays."""
     x_centered = x - x.mean(axis=1, keepdims=True).reshape(-1, 1)
     y_centered = y - y.mean(axis=1, keepdims=True).reshape(-1, 1)
     corr = (x_centered * y_centered).sum(axis=1)
     corr /= np.sqrt((x_centered**2).sum(axis=1) * (y_centered**2).sum(axis=1))
-    return corr ** 2
+    return corr**2
 
 
-def local_similarity_map(image, prediction, map_to='pred', lamb=0.5, window_size=9, n_dims=1, **kwargs):
-    """ Local Similarity Map between an image and estimated noise.
+def local_similarity_map(
+    image, prediction, map_to="pred", lamb=0.5, window_size=9, n_dims=1, **kwargs
+):
+    """Local Similarity Map between an image and estimated noise.
     Chen, Yangkang, and Sergey Fomel. "`Random noise attenuation using local signal-and-noise orthogonalization
     <https://library.seg.org/doi/10.1190/geo2014-0227.1>`_"
 
@@ -151,40 +166,52 @@ def local_similarity_map(image, prediction, map_to='pred', lamb=0.5, window_size
     image = image.squeeze()
     prediction = prediction.squeeze()
     image_noise = np.abs(image - prediction)
-    image = image if map_to == 'image' else prediction
+    image = image if map_to == "image" else prediction
     img_shape = image.shape
 
     pad = window_size // 2
-    pad_width = [[pad, window_size - (1 + pad)], [pad * (n_dims - 1), (window_size - (1 + pad)) * (n_dims - 1)]]
+    pad_width = [
+        [pad, window_size - (1 + pad)],
+        [pad * (n_dims - 1), (window_size - (1 + pad)) * (n_dims - 1)],
+    ]
 
-    image = np.pad(image, pad_width=pad_width, mode='mean')
-    image_noise = np.pad(image_noise, pad_width=pad_width, mode='mean')
+    image = np.pad(image, pad_width=pad_width, mode="mean")
+    image_noise = np.pad(image_noise, pad_width=pad_width, mode="mean")
 
-    window_shape=[window_size, window_size if n_dims == 2 else 1]
-    image_view = np.lib.stride_tricks.sliding_window_view(image, window_shape=window_shape)
-    image_noise_view = np.lib.stride_tricks.sliding_window_view(image_noise, window_shape=window_shape)
+    window_shape = [window_size, window_size if n_dims == 2 else 1]
+    image_view = np.lib.stride_tricks.sliding_window_view(
+        image, window_shape=window_shape
+    )
+    image_noise_view = np.lib.stride_tricks.sliding_window_view(
+        image_noise, window_shape=window_shape
+    )
 
     straighten = (np.dot(*image_view.shape[:2]), np.dot(*image_view.shape[2:]))
     image_view = image_view.reshape(straighten)
     image_noise_view = image_noise_view.reshape(straighten)
 
     H = np.eye(window_size**n_dims, dtype=np.float) * lamb
-    H = np.lib.stride_tricks.as_strided(H, shape=(image_view.shape[0], window_size**n_dims, window_size**n_dims),
-                                        strides=(0, 8 * window_size**n_dims, 8))
+    H = np.lib.stride_tricks.as_strided(
+        H,
+        shape=(image_view.shape[0], window_size**n_dims, window_size**n_dims),
+        strides=(0, 8 * window_size**n_dims, 8),
+    )
 
     sim_local = _local_similarity(a=image_view, b=image_noise_view, H=H, **kwargs)
     return sim_local.reshape(img_shape)
 
+
 def _local_similarity(a, b, H, *args, **kwargs):
-    """ Local Similarity between an image and estimated noise. """
+    """Local Similarity between an image and estimated noise."""
     A = np.array([np.diag(a[i]) for i in range(len(a))])
     B = np.array([np.diag(b[i]) for i in range(len(b))])
     c1 = _shaping_conjugate_gradient(L=A, H=H, d=b, *args, **kwargs)
     c2 = _shaping_conjugate_gradient(L=B, H=H, d=a, *args, **kwargs)
     return np.sum(c1 * c2, axis=1)
 
+
 def _shaping_conjugate_gradient(L, H, d, tol=1e-5, N=20):
-    """ Vectorized Shaping Conjugate gradient Algorithm for a system with smoothing operator.
+    """Vectorized Shaping Conjugate gradient Algorithm for a system with smoothing operator.
     Fomel, Sergey. "`Shaping regularization in geophysical-estimation problems
     <https://library.seg.org/doi/10.1190/1.2433716>`_".
     Variables and parameters are preserved as in the paper.
@@ -202,7 +229,7 @@ def _shaping_conjugate_gradient(L, H, d, tol=1e-5, N=20):
         gm = H @ gp[..., np.newaxis]
         gr = L @ gm
 
-        rho = np.sum(gp ** 2, axis=1)
+        rho = np.sum(gp**2, axis=1)
         if i == 0:
             beta = np.zeros((L.shape[0], 1))
             rho0 = rho
@@ -215,7 +242,9 @@ def _shaping_conjugate_gradient(L, H, d, tol=1e-5, N=20):
         sm = gm.squeeze() + beta * sm
         sr = gr.squeeze() + beta * sr
 
-        alpha = rho / (np.sum(sr ** 2, axis=1) + np.sum(sp ** 2, axis=1) - np.sum(sm ** 2, axis=1) + EPS)
+        alpha = rho / (
+            np.sum(sr**2, axis=1) + np.sum(sp**2, axis=1) - np.sum(sm**2, axis=1) + EPS
+        )
         alpha = alpha[..., np.newaxis]
 
         p -= alpha * sp
@@ -225,9 +254,10 @@ def _shaping_conjugate_gradient(L, H, d, tol=1e-5, N=20):
     return m
 
 
-
-def fourier_power_spectrum(image, prediction, fourier_map='pred', map_to=None, **kwargs):
-    """ Fourier Power Spectrum for an image.
+def fourier_power_spectrum(
+    image, prediction, fourier_map="pred", map_to=None, **kwargs
+):
+    """Fourier Power Spectrum for an image.
 
     Parameters
     ----------
@@ -240,9 +270,9 @@ def fourier_power_spectrum(image, prediction, fourier_map='pred', map_to=None, *
     np.ndarray
         Array of the same shape.
     """
-    image = image if fourier_map == 'image' else prediction
+    image = image if fourier_map == "image" else prediction
     image = image.squeeze()
     img_fft = fftpack.fft2(image, **kwargs)
     shift_fft = fftpack.fftshift(img_fft)
-    spectrum = np.abs(shift_fft)**2
+    spectrum = np.abs(shift_fft) ** 2
     return np.log10(spectrum).squeeze()
