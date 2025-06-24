@@ -452,10 +452,28 @@ class Geometry(BenchmarkMixin, CacheMixin, ConversionMixin, ExportMixin, MetricM
         """ Convert lines to CDP. """
         return (self.rotation_matrix[:, :2] @ points.T + self.rotation_matrix[:, 2].reshape(2, -1)).T
 
-    def cdp_to_lines(self, points):
-        """ Convert CDP to lines. """
+    def cdp_to_lines(self, points: np.ndarray) -> np.ndarray:
+        """Turns points from format (CDP_X, CDP_Y) -> (INLINE_3D, CROSSLINE_3D)
+
+        Parameters
+        ----------
+        rotation_matrix: np.ndarray
+            a rotation matrix that is calculated with `compute_rotation_matrix` function
+        points: np.ndarray
+            a numpy array with shape [N,2], containing CDP_X, CDP_Y, scaled by cdp_factor to match coordinates of geometry
+
+        Returns
+        -------
+        points: np.ndarray
+            a numpy array with shape [N,2], containing INLINE_3D, CROSSLINE_3D
+        """
+        assert self.rotation_matrix.shape == (2, 3)
+        assert points.shape[1] == 2  # CDP_X, CDP_Y
         inverse_matrix = np.linalg.inv(self.rotation_matrix[:, :2])
-        lines = (inverse_matrix @ points.T - inverse_matrix @ self.rotation_matrix[:, 2].reshape(2, -1)).T
+        lines = (
+            inverse_matrix @ points.T
+            - inverse_matrix @ self.rotation_matrix[:, 2].reshape(2, -1)
+        ).T
         return np.rint(lines)
 
 
