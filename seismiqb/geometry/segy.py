@@ -218,25 +218,67 @@ class GeometrySEGY(Geometry):
 
 
     # Compute additional stats from CDP/LINES correspondence
-    def compute_rotation_matrix(self, n_points=10):
-        """ Compute transform from INLINE_3D/CROSSLINE_3D coordinates to CDP_X/CDP_Y system. """
+    def compute_rotation_matrix(self, n_points:int=10) -> np.ndarray:
+        """Computes a 2x3 affine transformation matrix to map inline/crossline coordinates to CDP_X/Y.
+
+        Parameters
+        ----------
+        n_points : int, optional
+            Number of points to use for computation, by default 10
+
+        Returns
+        -------
+        rotation_matrix : np.ndarray
+            A 2x3 affine matrix of floats for the transformation:
+        """
         ix_points = []
         cdp_points = []
+
+        if not set(["INLINE_3D", "CROSSLINE_3D", "CDP_X", "CDP_Y"]).issubset(
+            self.headers.columns
+        ):
+            raise ValueError(
+                "Some of 'INLINE_3D', 'CROSSLINE_3D', 'CDP_X', 'CDP_Y' headers are missing from geometry headers"
+            )
 
         for _ in range(n_points):
             idx = np.random.randint(self.n_traces)
             row = self.headers.iloc[idx]
 
             # INLINE_3D -> CDP_X, CROSSLINE_3D -> CDP_Y
-            ix_point = (row['INLINE_3D'], row['CROSSLINE_3D'])
-            cdp_point = (row['CDP_X'], row['CDP_Y'])
+            ix_point = (row["INLINE_3D"], row["CROSSLINE_3D"])
+            cdp_point = (row["CDP_X"], row["CDP_Y"])
 
             ix_points.append(ix_point)
             cdp_points.append(cdp_point)
-        rotation_matrix, inliers = cv2.estimateAffine2D(np.float32(ix_points), np.float32(cdp_points))
 
-        if 0 in inliers:
-            return None
+        rotation_matrix, inliers = cv2.estimateAffine2D(
+            np.float32(ix_points), np.float32(cdp_points)
+        )
+
+        # if 0 in inliers:
+        #     return None
+
+        # =======================================================================================================
+        # validation of rotation matrix. Reconstruct the ix_points from cdp_points and compare it with ix_points
+        A = rotation_matrix  # shape (2, 3)
+        ix, cdp = np.float32(ix_points), np.float32(cdp_points)
+        # Convert A into full 3x3 matrix
+        A_hom = np.vstack([A, [0, 0, 1]])  # shape (3, 3)
+        # Invert the affine transform
+        A_inv = np.linalg.inv(A_hom)
+        # Augment CDP points
+        cdp_aug = np.hstack([cdp, np.ones((len(cdp), 1))])  # shape (N, 3)
+        # Apply inverse transformation
+        ix_recovered = (A_inv[:2, :] @ cdp_aug.T).T  # shape (N, 2)
+        ix_recovered = np.rint(ix_recovered)
+        # Compare with original IX
+        errors = np.linalg.norm(ix - ix_recovered, axis=1)
+        assert (
+            errors.max() == 0
+        ), f"The inline and crossline coordinates were not recovered right from cdp coordinates."
+        # =======================================================================================================
+
         return rotation_matrix
 
     def compute_area(self, shift=50):
