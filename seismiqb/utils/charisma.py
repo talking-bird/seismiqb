@@ -265,7 +265,7 @@ class CharismaMixin:
     def scale_cdp(self, df: pd.DataFrame, cdp_factor=1) -> pd.DataFrame:
         """Scale CDP coordinates in case the CHARISMA file containes CDP coordinates with different scale."""
         df[["CDP_X", "CDP_Y"]] *= cdp_factor
-        )
+        
         CDPX_geom_bounds = (
             self.field.geometry.headers["CDP_X"].agg(["min", "max"]).values
         )
