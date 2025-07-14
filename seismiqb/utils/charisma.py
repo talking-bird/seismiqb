@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import pandas as pd
+from scipy.interpolate import griddata
 
 from .functions import make_interior_points_mask
 
@@ -81,9 +82,18 @@ class CharismaMixin:
         df = pd.read_csv(
             path, sep=r"\s+", names=names, usecols=self.REDUCED_CHARISMA_SPEC
         )
-        df = self.scale_cdp(df, cdp_factor)
-        if recover_lines:
-            df = self.recover_lines_from_cdp(df)
+        if not recover_lines and kwargs.get("interpolate_on_geometry", False):
+            raise NotImplementedError(
+                "Interpolation is implemented only for files with CDP coorinates, not for files with inlines and crosslines."
+            )
+        if recover_lines:  # assuming you have a file with CDP coordinates
+            df.rename(
+                columns={"INLINE_3D": "CDP_X", "CROSSLINE_3D": "CDP_Y"}, inplace=True
+            )
+            df = self.scale_cdp(df, cdp_factor)
+            df = self.recover_lines_from_cdp(
+                df, interpolate_on_geometry=kwargs.get("interpolate_on_geometry", True)
+            )
         df.sort_values(self.REDUCED_CHARISMA_SPEC, inplace=True)
         points = df.values
 
@@ -201,12 +211,13 @@ class CharismaMixin:
         except UnicodeDecodeError:
             return False
 
-    def recover_lines_from_cdp(self, df):
+    def recover_lines_from_cdp(self, df, interpolate_on_geometry=True):
         """Fix broken iline and crossline coordinates.
         If coordinates are out of the cube, 'iline' and 'xline' will be infered from 'cdp_x' and 'cdp_y'.
         """
         # convert cdp to iline and xline
-        df[["CDP_X", "CDP_Y"]] = df[["INLINE_3D", "CROSSLINE_3D"]]
+        if interpolate_on_geometry:
+            df = self.interpolate_on_geometry(df)
 
         coords = np.rint(
             self.field.geometry.cdp_to_lines(df[["CDP_X", "CDP_Y"]].values)
@@ -253,7 +264,68 @@ class CharismaMixin:
 
     def scale_cdp(self, df: pd.DataFrame, cdp_factor=1) -> pd.DataFrame:
         """Scale CDP coordinates in case the CHARISMA file containes CDP coordinates with different scale."""
-        df[["INLINE_3D", "CROSSLINE_3D"]] = (
-            df[["INLINE_3D", "CROSSLINE_3D"]] * cdp_factor
+        df[["CDP_X", "CDP_Y"]] *= cdp_factor
         )
+        CDPX_geom_bounds = (
+            self.field.geometry.headers["CDP_X"].agg(["min", "max"]).values
+        )
+        CDPY_geom_bounds = (
+            self.field.geometry.headers["CDP_Y"].agg(["min", "max"]).values
+        )
+
+        CDPX_horizon_bounds = df["CDP_X"].agg(["min", "max"])
+        CDPY_horizon_bounds = df["CDP_Y"].agg(["min", "max"])
+
+        if not (
+            df["CDP_X"].between(CDPX_geom_bounds[0], CDPX_geom_bounds[1]).all()
+            and df["CDP_Y"].between(CDPY_geom_bounds[0], CDPY_geom_bounds[1]).all()
+        ):
+            raise ValueError(
+                f"""
+                CDP_X and CDP_Y coordinates are out of geometry bounds.
+                Try scaling CDP coordinates.
+                CDPX geometry bounds: [{CDPX_geom_bounds[0]:1.2e} - {CDPX_geom_bounds[1]:1.2e}]
+                CDPY geometry bounds: [{CDPY_geom_bounds[0]:1.2e} - {CDPY_geom_bounds[1]:1.2e}]
+                CDPX horizon bounds: [{CDPX_horizon_bounds[0]:1.2e} - {CDPX_horizon_bounds[1]:1.2e}]
+                CDPY horizon bounds: [{CDPY_horizon_bounds[0]:1.2e} - {CDPY_horizon_bounds[1]:1.2e}]
+                approximate suggested cdp_factor: {cdp_factor * CDPX_geom_bounds[0] / CDPX_horizon_bounds[0]:.2f}
+                """
+            )
+
         return df
+
+    def interpolate_on_geometry(self, points_df: pd.DataFrame) -> pd.DataFrame:
+        """Interpolates depths from horizon points to all coordinates from geometry
+
+        Parameters
+        ----------
+        points_df : pd.DataFrame
+            DataFrame with horizon points
+
+        Returns
+        -------
+        pd.DataFrame
+        """
+        interpolated_depth = griddata(
+            points=points_df[["CDP_X", "CDP_Y"]],
+            values=points_df["DEPTH"],
+            xi=self.field.geometry.headers[["CDP_X", "CDP_Y"]],
+            method="linear",
+        )
+        new_points_df = pd.DataFrame(
+            {
+                "CDP_X": self.field.geometry.headers["CDP_X"],
+                "CDP_Y": self.field.geometry.headers["CDP_Y"],
+                "DEPTH": interpolated_depth,
+            }
+        )
+        new_points_df = new_points_df[~new_points_df.DEPTH.isna()]
+        if len(new_points_df) == 0:
+            print("No points to interpolate")
+            print("Points to interpolate:")
+            print(points_df.describe().loc[["min", "max"]])
+            print("Points to interpolate on:")
+            print(self.field.geometry.headers.describe().loc[["min", "max"]])
+            print("Interpolation failed")
+            # raise ValueError("Interpolation failed")
+        return new_points_df

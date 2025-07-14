@@ -405,7 +405,19 @@ class Horizon(
             self.reset_storage(storage=reset, reset_cache=False)
 
     def from_charisma(self, path, transform=True, **kwargs):
-        """Init from path to either CHARISMA or REDUCED_CHARISMA csv-like file."""
+        """Init from path to either CHARISMA or REDUCED_CHARISMA csv-like file.
+
+        Parameters
+        ----------
+        path : str
+            Path to a file to import data from.
+        recover_lines : bool, optional
+            Whether to recover lines from CDP coords
+        cdp_factor : int, optional
+            Scaling factor for CDP coordinates
+        interpolate_on_geometry : bool, optional
+            Whether to interpolate when recovering lines
+        """
         points = self.load_charisma(
             path=path,
             dtype=self.dtype,
@@ -415,6 +427,7 @@ class Horizon(
             verify=True,
             cdp_factor=kwargs.pop("cdp_factor", 1),
             recover_lines=kwargs.pop("recover_lines", False),
+            interpolate_on_geometry=kwargs.pop("interpolate_on_geometry", False),
         )
 
         self.from_points(points, verify=False, **kwargs)
